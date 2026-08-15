@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { authClient } from "./auth-client";
 import { api, center } from "./api";
+import { randomUuid } from "./ids";
 type Nav = { id: string; label: string; icon: any };
 const nav: Nav[] = [
   { id: "overview", label: "运行概览", icon: Gauge },
@@ -697,7 +698,7 @@ function BrowserPanel() {
                     ],
                     keepAlive: false,
                   }),
-              correlationId: crypto.randomUUID(),
+              correlationId: randomUuid(),
             }),
           },
         ),
@@ -2138,7 +2139,7 @@ function BotsPanel() {
 }
 const capabilityDraftKey = "qft.capability-builder.draft.v1";
 const capabilityDraftTemplate = (kind: "workflow" | "browser") => {
-  const suffix = crypto.randomUUID(),
+  const suffix = randomUuid(),
     id = `${kind}.custom.${suffix}`;
   return JSON.stringify(
     {
@@ -2394,7 +2395,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
   });
   const createCommand = useMutation({
     mutationFn: async () => {
-      const id = `command.custom.${crypto.randomUUID()}`;
+      const id = `command.custom.${randomUuid()}`;
       const command = commandDraft.command.trim().toLowerCase();
       const aliases = commandDraft.aliases
         .split(/[,，\s]+/)
@@ -2407,7 +2408,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
             name: id,
             version: "1.0.0",
             source: { type: "directory", ref: `console://${id}` },
-            contentHash: crypto.randomUUID(),
+            contentHash: randomUuid(),
             metadata: { managedBy: "console" },
           },
           manifests: [
