@@ -203,6 +203,10 @@ nav button.active {
   display: flex;
   justify-content: flex-start;
 }
+.aside-footer button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
 .content {
   grid-column: 2;
   min-width: 0;
@@ -269,9 +273,44 @@ nav button.active {
   background: #fff;
   border: 1px solid #dce4df;
 }
+.overview-refresh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #68756d;
+  font-size: 12px;
+}
+.status-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 12px;
+  border: 1px solid #dce4df;
+  background: #fff;
+}
+.status-summary > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-right: 1px solid #edf1ee;
+}
+.status-summary > div:last-child {
+  border-right: 0;
+}
+.status-summary span {
+  color: #68756d;
+  font-size: 12px;
+}
+.status-summary strong {
+  font-size: 18px;
+}
+.status-summary .has-issues strong {
+  color: #a3312c;
+}
 .status-row {
   display: grid;
-  grid-template-columns: 12px 100px 1fr 80px;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
@@ -280,8 +319,26 @@ nav button.active {
 .status-row:last-child {
   border: 0;
 }
+.status-name,
+.status-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.status-name {
+  gap: 10px;
+}
+.status-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-meta {
+  justify-content: flex-end;
+  gap: 16px;
+}
 .status-row span,
-.status-row code {
+.status-row code,
+.status-name span {
   font-size: 13px;
   color: #68756d;
 }
@@ -1070,6 +1127,22 @@ progress {
   .schedule-row {
     grid-template-columns: 1fr;
   }
+  .status-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .status-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+  .status-summary > div:nth-child(-n + 2) {
+    border-bottom: 1px solid #edf1ee;
+  }
+  .status-row {
+    grid-template-columns: 12px minmax(0, 1fr);
+  }
+  .status-meta {
+    grid-column: 2;
+    justify-content: space-between;
+  }
   .schedule-times {
     grid-template-columns: 1fr !important;
   }
@@ -1159,6 +1232,7 @@ progress {
   }
   .login-panel,
   .topbar,
+  .status-summary,
   .status-grid,
   .table-wrap,
   .empty,
@@ -1210,6 +1284,7 @@ html[data-theme="dark"] .login {
 }
 html[data-theme="dark"] .login-panel,
 html[data-theme="dark"] .topbar,
+html[data-theme="dark"] .status-summary,
 html[data-theme="dark"] .status-grid,
 html[data-theme="dark"] .table-wrap,
 html[data-theme="dark"] .empty,
@@ -1249,6 +1324,7 @@ html[data-theme="light"] .login {
 }
 html[data-theme="light"] .login-panel,
 html[data-theme="light"] .topbar,
+html[data-theme="light"] .status-summary,
 html[data-theme="light"] .status-grid,
 html[data-theme="light"] .table-wrap,
 html[data-theme="light"] .empty,

@@ -184,31 +184,53 @@ export function buildServer(o: {
     const entries = await Promise.all(
       Object.entries(centerUrls).map(async ([name]) => {
         const started = Date.now();
-        try {
-          const response = await centerFetch(
-            name as any,
-            "/healthz",
-            o.internalToken,
+        const probe = (path: string) =>
+          centerFetch(name as any, path, o.internalToken, {
+            signal: AbortSignal.timeout(3_000),
+          });
+        const [healthResult, readinessResult, versionResult] =
+          await Promise.allSettled([
+            probe("/healthz"),
+            probe("/readyz"),
+            probe("/version"),
+          ]);
+        const health =
+            healthResult.status === "fulfilled"
+              ? healthResult.value
+              : undefined,
+          readiness =
+            readinessResult.status === "fulfilled"
+              ? readinessResult.value
+              : undefined,
+          versionResponse =
+            versionResult.status === "fulfilled"
+              ? versionResult.value
+              : undefined,
+          versionBody = versionResponse
+            ? await versionResponse.json().catch(() => undefined)
+            : undefined,
+          rejected = [healthResult, readinessResult, versionResult].find(
+            (result) => result.status === "rejected",
           );
-          return [
-            name,
-            {
-              ok: response.ok,
-              status: response.status,
-              latencyMs: Date.now() - started,
-            },
-          ];
-        } catch (error) {
-          return [
-            name,
-            {
-              ok: false,
-              status: 0,
-              latencyMs: Date.now() - started,
-              error: error instanceof Error ? error.message : "unavailable",
-            },
-          ];
-        }
+        return [
+          name,
+          {
+            ok: health?.ok ?? false,
+            ready: readiness?.ok ?? false,
+            status: health?.status ?? 0,
+            readinessStatus: readiness?.status ?? 0,
+            version: versionBody?.data?.version ?? versionBody?.version,
+            latencyMs: Date.now() - started,
+            ...(rejected?.status === "rejected"
+              ? {
+                  error:
+                    rejected.reason instanceof Error
+                      ? rejected.reason.message
+                      : "unavailable",
+                }
+              : {}),
+          },
+        ];
       }),
     );
     return { ok: true, data: Object.fromEntries(entries) };

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { prepareAuth } from "./auth.js";
 import { buildServer } from "./app.js";
+import { requireInternalServiceToken } from "./config.js";
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 if (
@@ -12,7 +13,7 @@ const { auth, passwordChangeRequired, markPasswordChanged } =
   await prepareAuth(databaseUrl);
 await buildServer({
   auth,
-  internalToken: process.env.INTERNAL_SERVICE_TOKEN ?? "development-only",
+  internalToken: requireInternalServiceToken(),
   staticRoot: join(process.cwd(), "dist"),
   larkOAuthRedirectBaseUrl:
     process.env.LARK_OAUTH_REDIRECT_BASE_URL ?? process.env.BETTER_AUTH_URL,

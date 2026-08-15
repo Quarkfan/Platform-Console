@@ -244,35 +244,76 @@ function Overview() {
   const {
     data = {},
     isLoading,
+    isFetching,
+    dataUpdatedAt,
     refetch,
   } = useQuery({
     queryKey: ["status"],
     queryFn: () => api<Record<string, any>>("/api/centers/status"),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
   });
+  const statuses = Object.entries(data),
+    live = statuses.filter(([, status]) => status.ok).length,
+    ready = statuses.filter(([, status]) => status.ready).length,
+    issues = statuses.length - ready;
   return (
     <>
       <Header
         title="运行概览"
         action={
-          <button
-            className="icon-button"
-            title="刷新"
-            onClick={() => refetch()}
-          >
-            <RefreshCw size={18} />
-          </button>
+          <div className="overview-refresh">
+            <span>
+              {dataUpdatedAt
+                ? `最近检查 ${new Date(dataUpdatedAt).toLocaleTimeString()}`
+                : "尚未检查"}
+            </span>
+            <button
+              className="icon-button"
+              title="刷新"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw size={18} />
+            </button>
+          </div>
         }
       />
+      <div className="status-summary" aria-label="平台健康摘要">
+        <div>
+          <span>服务</span>
+          <strong>{statuses.length || "-"}</strong>
+        </div>
+        <div>
+          <span>进程存活</span>
+          <strong>{live}</strong>
+        </div>
+        <div>
+          <span>依赖就绪</span>
+          <strong>{ready}</strong>
+        </div>
+        <div className={issues ? "has-issues" : ""}>
+          <span>需处理</span>
+          <strong>{issues}</strong>
+        </div>
+      </div>
       <div className="status-grid">
         {isLoading ? (
           <div className="empty">正在检查服务</div>
         ) : (
-          Object.entries(data).map(([name, s]) => (
+          statuses.map(([name, s]) => (
             <div className="status-row" key={name}>
-              <span className={s.ok ? "dot online" : "dot offline"} />
-              <strong>{name.toUpperCase()}</strong>
-              <span>{s.ok ? "运行中" : "不可用"}</span>
-              <code>{s.latencyMs} ms</code>
+              <span className={s.ready ? "dot online" : "dot offline"} />
+              <div className="status-name">
+                <strong>{name.toUpperCase()}</strong>
+                <span>{s.version ? `v${s.version}` : "版本未知"}</span>
+              </div>
+              <div className="status-meta">
+                <span>
+                  {s.ready ? "已就绪" : s.ok ? "依赖未就绪" : "不可用"}
+                </span>
+                <code>{s.latencyMs} ms</code>
+              </div>
             </div>
           ))
         )}
@@ -3539,12 +3580,73 @@ function AppShell({ me }: { me: any }) {
     qc = useQueryClient();
   const diagnostics = useMutation({
     mutationFn: async () => {
-      const status = await api("/api/centers/status");
+      const status = await api("/api/centers/status"),
+        sources: Array<[string, string, string]> = [
+          ["mg-runtime", "mg", "/v1/logs?limit=200"],
+          ["mg-deliveries", "mg", "/v1/deliveries?limit=100"],
+          ["cr-diagnostics", "cr", "/v1/diagnostics"],
+          ["runtime-executions", "runtime", "/v1/executions?tenantId=default"],
+          ["scheduler-runs", "scheduler", "/v1/runs"],
+          ["governance-audit", "governance", "/v1/audit?tenantId=default"],
+          ["resource-media", "resource", "/v1/media/jobs?tenantId=default"],
+        ],
+        snapshots = await Promise.allSettled(
+          sources.map(([, name, path]) => center<any>(name, path)),
+        ),
+        metadataKeys = new Set([
+          "id",
+          "tenantId",
+          "botId",
+          "accountId",
+          "channel",
+          "kind",
+          "type",
+          "action",
+          "status",
+          "outcome",
+          "risk",
+          "error",
+          "reason",
+          "correlationId",
+          "createdAt",
+          "updatedAt",
+          "startedAt",
+          "finishedAt",
+          "lastRunAt",
+          "nextRunAt",
+          "attempts",
+          "progress",
+        ]),
+        project = (value: any) => {
+          const values = Array.isArray(value) ? value.slice(0, 100) : [value];
+          return values.map((item) =>
+            item && typeof item === "object"
+              ? Object.fromEntries(
+                  Object.entries(item).filter(([key]) => metadataKeys.has(key)),
+                )
+              : item,
+          );
+        },
+        logs = snapshots.map((result, index) => ({
+          name: `${sources[index]![0]}.json`,
+          content: JSON.stringify(
+            result.status === "fulfilled"
+              ? project(result.value)
+              : { unavailable: true, error: String(result.reason) },
+            null,
+            2,
+          ),
+        }));
       return center<any>("resource", "/v1/diagnostics", {
         method: "POST",
         body: JSON.stringify({
           tenantId: "default",
-          sections: { status, generatedAt: new Date().toISOString() },
+          sections: {
+            status,
+            generatedAt: new Date().toISOString(),
+            scope: "operational-metadata-only",
+          },
+          logs,
         }),
       });
     },
@@ -3582,9 +3684,23 @@ function AppShell({ me }: { me: any }) {
           ))}
         </nav>
         <div className="aside-footer">
-          <button onClick={() => diagnostics.mutate()}>
+          <button
+            onClick={() => diagnostics.mutate()}
+            disabled={diagnostics.isPending}
+            title={
+              diagnostics.error
+                ? diagnostics.error instanceof Error
+                  ? diagnostics.error.message
+                  : "排障包生成失败"
+                : "收集脱敏运行元数据并生成排障包"
+            }
+          >
             <Download size={17} />
-            一键排障
+            {diagnostics.isPending
+              ? "正在收集"
+              : diagnostics.error
+                ? "排障失败，重试"
+                : "一键排障"}
           </button>
           <button
             onClick={async () => {

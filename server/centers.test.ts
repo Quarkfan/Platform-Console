@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertCenterPath,
   assertConsoleProxyPath,
+  centerFetch,
   isCenter,
 } from "./centers.js";
 describe("Console BFF boundary", () => {
+  afterEach(() => vi.unstubAllGlobals());
   it("only accepts registered centers", () => {
     expect(isCenter("runtime")).toBe(true);
     expect(isCenter("metadata")).toBe(false);
@@ -39,5 +41,12 @@ describe("Console BFF boundary", () => {
     expect(() =>
       assertConsoleProxyPath("mg", "/v1/oauth/lark/callback"),
     ).toThrow("identity-bound");
+  });
+  it("preserves a caller-provided timeout signal", async () => {
+    const fetcher = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetcher);
+    const signal = AbortSignal.timeout(50);
+    await centerFetch("mg", "/healthz", "token", { signal });
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(signal);
   });
 });

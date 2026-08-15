@@ -57,6 +57,6 @@ export async function centerFetch(
       ...(init?.body ? { "content-type": "application/json" } : {}),
       ...init?.headers,
     },
-    signal: AbortSignal.timeout(300000),
+    signal: init?.signal ?? AbortSignal.timeout(300000),
   });
 }

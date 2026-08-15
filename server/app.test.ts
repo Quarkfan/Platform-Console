@@ -3,7 +3,10 @@ import { buildServer } from "./app.js";
 
 describe("Console account security", () => {
   const apps: Array<ReturnType<typeof buildServer>> = [];
-  afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await Promise.all(apps.splice(0).map((app) => app.close()));
+  });
 
   it("blocks control-plane access until the bootstrap password is changed", async () => {
     let required = true;
@@ -47,5 +50,41 @@ describe("Console account security", () => {
     expect(changed.statusCode).toBe(200);
     expect(changePassword).toHaveBeenCalledOnce();
     expect(required).toBe(false);
+  });
+
+  it("reports liveness, readiness, version and bounded probe latency", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = new URL(String(input)).pathname;
+        if (path === "/version")
+          return Response.json({ ok: true, data: { version: "0.1.0" } });
+        return Response.json({ ok: true, data: {} });
+      }),
+    );
+    const app = buildServer({
+      auth: {
+        handler: vi.fn(),
+        api: {
+          getSession: vi.fn(async () => ({
+            session: { id: "session-1" },
+            user: { id: "user-1", name: "operator", role: "operator" },
+          })),
+        },
+      } as any,
+      internalToken: "test",
+      passwordChangeRequired: async () => false,
+    });
+    apps.push(app);
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/centers/status",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.mg).toMatchObject({
+      ok: true,
+      ready: true,
+      version: "0.1.0",
+    });
   });
 });
