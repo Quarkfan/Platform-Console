@@ -95,7 +95,9 @@ textarea {
 }
 input:not([type="checkbox"]):not([type="radio"]),
 select {
+  height: 40px;
   min-height: 40px;
+  padding-block: 0;
 }
 textarea {
   min-height: 88px;
@@ -340,41 +342,44 @@ nav button.active {
   justify-content: space-between;
   margin-bottom: 22px;
 }
-.page-guide {
-  margin: -8px 0 20px;
-  border-block: 1px solid #dce4df;
-  background: #f8faf9;
+.page-guide-trigger {
+  margin: -6px 0 18px;
+  color: #64736a;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
 }
-.page-guide > summary {
-  min-height: 48px;
-  display: grid;
-  grid-template-columns: 20px auto minmax(0, 1fr);
+.page-guide-trigger:hover {
+  border-color: #cfe0d5;
+}
+.guide-dialog {
+  width: min(820px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 40px));
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #dce4df;
+  border-radius: 7px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgb(20 36 28 / 22%);
+}
+.guide-dialog .section-title {
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  color: #345243;
-  cursor: pointer;
-  list-style: none;
+  margin-bottom: 8px;
 }
-.page-guide > summary::-webkit-details-marker {
-  display: none;
+.guide-dialog h3 {
+  margin: 3px 0 0;
+  font-size: 18px;
 }
-.page-guide > summary span {
+.guide-intro {
+  margin: 0 0 16px;
+  color: #536159;
   font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.page-guide > summary small {
-  min-width: 0;
-  color: #66746c;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.65;
 }
 .page-guide-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid #e4ebe7;
+  border: 1px solid #e4ebe7;
 }
 .page-guide-grid section {
   padding: 14px 16px;
@@ -796,6 +801,22 @@ progress {
 .advanced-config summary::-webkit-details-marker {
   display: none;
 }
+.advanced-config summary small {
+  color: #738078;
+  font-weight: 400;
+}
+.advanced-description,
+.field-help {
+  display: block;
+  margin: 5px 0 0;
+  color: #6a786f;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.advanced-description {
+  margin: 10px 0 0;
+  max-width: 760px;
+}
 .advanced-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1186,10 +1207,14 @@ progress {
 }
 .policy-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 160px 200px 100px 160px;
+  gap: 14px;
+  margin-top: 12px;
+}
+.policy-main-fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 160px 160px;
   gap: 10px;
   align-items: end;
-  margin-top: 12px;
 }
 .model-entity-list {
   border: 1px solid #dce4df;
@@ -1386,10 +1411,31 @@ progress {
   flex: 0 0 16px;
 }
 .deployment-options {
-  grid-column: 1/-1;
   display: flex;
-  gap: 16px;
+  align-items: center;
+  gap: 12px 18px;
   flex-wrap: wrap;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #dce4df;
+}
+.deployment-options legend {
+  padding: 0 5px;
+  color: #5b685f;
+  font-size: 12px;
+}
+.policy-options-row {
+  display: flex;
+  align-items: end;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+}
+.policy-options-row > label:not(.checkbox) {
+  display: grid;
+  min-width: 180px;
+  gap: 7px;
+  color: #5b685f;
+  font-size: 12px;
 }
 .manual-toolbar {
   display: grid;
@@ -1772,6 +1818,7 @@ progress {
   .model-form,
   .context-form,
   .policy-form,
+  .policy-main-fields,
   .skill-import-row,
   .git-skill-form,
   .binding-form,
@@ -1891,13 +1938,6 @@ progress {
   }
   .table-wrap table {
     min-width: 900px;
-  }
-  .page-guide > summary {
-    grid-template-columns: 20px minmax(0, 1fr);
-  }
-  .page-guide > summary small {
-    grid-column: 1 / -1;
-    white-space: normal;
   }
   .page-guide-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -2025,12 +2065,12 @@ html[data-theme="dark"] .manual-guide-list {
 html[data-theme="dark"] .model-entity-list {
   border-color: #2c3831;
 }
-html[data-theme="dark"] .page-guide,
+html[data-theme="dark"] .guide-dialog,
 html[data-theme="dark"] .action-menu {
   background: #19221d;
   border-color: #2c3831;
 }
-html[data-theme="dark"] .page-guide > summary,
+html[data-theme="dark"] .guide-dialog h3,
 html[data-theme="dark"] .page-guide-grid strong,
 html[data-theme="dark"] .action-menu button {
   color: #dfe7e2;
@@ -2040,7 +2080,10 @@ html[data-theme="dark"] .page-guide-grid section {
   border-color: #2c3831;
 }
 html[data-theme="dark"] .page-guide-grid ul,
-html[data-theme="dark"] .page-guide > summary small {
+html[data-theme="dark"] .guide-intro,
+html[data-theme="dark"] .advanced-description,
+html[data-theme="dark"] .field-help,
+html[data-theme="dark"] .advanced-config summary small {
   color: #aab6ae;
 }
 html[data-theme="dark"] .action-menu button:hover {

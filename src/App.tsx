@@ -540,31 +540,77 @@ export const pageGuides: Record<string, PageGuideContent> = {
 
 function PageGuide({ page }: { page: string }) {
   const guide = pageGuides[page];
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
   if (!guide) return null;
   return (
-    <details className="page-guide" open>
-      <summary>
+    <>
+      <button
+        className="page-guide-trigger secondary compact-button"
+        type="button"
+        onClick={() => setOpen(true)}
+      >
         <BookOpen size={16} />
         <span>本页指引</span>
-        <small>{guide.intro}</small>
-      </summary>
-      <div className="page-guide-grid">
-        {[
-          ["概念理解", guide.concepts],
-          ["怎么使用与配置", guide.configure],
-          ["执行后会发生什么", guide.effects],
-        ].map(([title, lines]) => (
-          <section key={title as string}>
-            <strong>{title as string}</strong>
-            <ul>
-              {(lines as string[]).map((line) => (
-                <li key={line}>{line}</li>
+      </button>
+      {open && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setOpen(false)}
+        >
+          <section
+            className="guide-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`guide-${page}-title`}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="section-title">
+              <div>
+                <span className="eyebrow">使用说明</span>
+                <h3 id={`guide-${page}-title`}>本页指引</h3>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                title="关闭指引"
+                aria-label="关闭指引"
+                onClick={() => setOpen(false)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <p className="guide-intro">{guide.intro}</p>
+            <div className="page-guide-grid">
+              {[
+                ["概念理解", guide.concepts],
+                ["怎么使用与配置", guide.configure],
+                ["执行后会发生什么", guide.effects],
+              ].map(([title, lines]) => (
+                <section key={title as string}>
+                  <strong>{title as string}</strong>
+                  <ul>
+                    {(lines as string[]).map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           </section>
-        ))}
-      </div>
-    </details>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1274,8 +1320,9 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
             <details className="advanced-config wide-field">
               <summary>
                 <Settings size={16} />
-                高级配置
+                高级配置 <small>重试与离线恢复方式</small>
               </summary>
+              <p className="advanced-description">失败重试适合短暂网络异常；错过策略决定服务暂停后是否补跑。没有明确补处理要求时保留默认值，避免重复执行。</p>
               <div className="advanced-grid">
                 <label>
                   重试次数
@@ -1816,8 +1863,9 @@ function ContextPanel() {
           <details className="advanced-config wide-field">
             <summary>
               <Settings size={16} />
-              高级配置
+              高级配置 <small>访问范围与来源专用参数</small>
             </summary>
+            <p className="advanced-description">限制范围可防止知识被不相关的机器人或工作空间召回；JSON 只填写对应来源连接器要求的参数，普通人工来源保持为空对象。</p>
             <div className="advanced-grid">
               <label>
                 限定机器人 ID
@@ -2013,8 +2061,9 @@ function ContextPanel() {
           <details className="advanced-config wide-field">
             <summary>
               <Settings size={16} />
-              高级配置
+              高级配置 <small>检索筛选标签</small>
             </summary>
+            <p className="advanced-description">标签用于在运行时筛选或归类该绑定。用逗号分隔；没有需要区分的检索场景时可以留空。</p>
             <div className="advanced-grid">
               <label className="wide-field">
                 标签
@@ -2448,8 +2497,11 @@ function ModelsPanel({
           <details className="advanced-config wide-field">
             <summary>
               <Settings size={16} />
-              高级配置
+              高级配置 <small>路由优先级、流量比例和协议兼容项</small>
             </summary>
+            <p className="advanced-description">
+              只有多个 Provider 共同提供同类模型，或上游要求额外认证/租户信息时才需要调整；首次接入请保留默认值。
+            </p>
             <div className="advanced-grid">
               <label>
                 调度优先级
@@ -2463,6 +2515,7 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">数值越小越先被路由；同优先级的 Provider 再按权重分配。</small>
               </label>
               <label>
                 权重
@@ -2477,6 +2530,7 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">同一优先级下的流量比例，例如 1 和 3 约为 25% 与 75%。</small>
               </label>
               <label className="wide-field">
                 自定义请求头（JSON）
@@ -2491,6 +2545,9 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">
+                  仅在上游要求 API Key 之外的固定 Header 时填写，例如 <code>{'{"HTTP-Referer":"https://example.com","X-Title":"QuarkfanTools"}'}</code>。每个键和值都必须是字符串；不要在这里重复保存 API Key 或临时用户令牌。
+                </small>
               </label>
             </div>
           </details>
@@ -2662,8 +2719,11 @@ function ModelsPanel({
           <details className="advanced-config wide-field">
             <summary>
               <Settings size={16} />
-              高级配置
+              高级配置 <small>能力声明、上下文上限、成本与适配器元数据</small>
             </summary>
+            <p className="advanced-description">
+              这些字段用于路由判断、用量估算和特殊适配器。没有来自模型服务商的明确参数时，留空比猜测更安全。
+            </p>
             <div className="advanced-grid">
               <label>
                 能力标签
@@ -2677,6 +2737,7 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">逗号分隔，例如 tools、vision；用于让调用方筛选支持的模型。</small>
               </label>
               <label>
                 上下文窗口
@@ -2691,6 +2752,7 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">该模型单次请求可容纳的 Token 总数，用于在发送前裁剪上下文。</small>
               </label>
               <label>
                 输入价格 / 百万 Token
@@ -2706,6 +2768,7 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">仅用于成本估算和统计，不会改变服务商实际计费。</small>
               </label>
               <label>
                 输出价格 / 百万 Token
@@ -2721,6 +2784,7 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">仅用于成本估算和统计，不会改变服务商实际计费。</small>
               </label>
               <label className="wide-field">
                 元数据（JSON）
@@ -2735,6 +2799,7 @@ function ModelsPanel({
                     })
                   }
                 />
+                <small className="field-help">为特定适配器保留的附加声明。只填写该适配器文档要求的 JSON；普通 OpenAI 兼容模型保持 <code>{'{}'}</code>。</small>
               </label>
             </div>
           </details>
@@ -2829,64 +2894,44 @@ function ModelsPanel({
           </button>
         </div>
         <div className="policy-form">
-          <input
-            aria-label="策略名称"
-            placeholder="策略名称"
-            value={policy.name}
-            onChange={(event) =>
-              setPolicy({ ...policy, name: event.target.value })
-            }
-          />
-          <select
-            aria-label="策略模式"
-            value={policy.mode}
-            onChange={(event) =>
-              setPolicy({ ...policy, mode: event.target.value })
-            }
-          >
-            <option value="fixed">固定</option>
-            <option value="round-robin">轮流</option>
-            <option value="random">随机</option>
-          </select>
-          <label className="checkbox">
+          <div className="policy-main-fields">
             <input
-              type="checkbox"
-              checked={policy.failoverOnFailure}
+              aria-label="策略名称"
+              placeholder="策略名称"
+              value={policy.name}
               onChange={(event) =>
-                setPolicy({
-                  ...policy,
-                  failoverOnFailure: event.target.checked,
-                })
+                setPolicy({ ...policy, name: event.target.value })
               }
             />
-            失败时切换下一个
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={policy.enabled}
+            <select
+              aria-label="策略模式"
+              value={policy.mode}
               onChange={(event) =>
-                setPolicy({ ...policy, enabled: event.target.checked })
+                setPolicy({ ...policy, mode: event.target.value })
               }
-            />
-            启用
-          </label>
-          <label>
-            最大尝试次数
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={policy.maxAttempts}
-              onChange={(event) =>
-                setPolicy({
-                  ...policy,
-                  maxAttempts: Number(event.target.value),
-                })
-              }
-            />
-          </label>
-          <div className="deployment-options">
+            >
+              <option value="fixed">固定</option>
+              <option value="round-robin">轮流</option>
+              <option value="random">随机</option>
+            </select>
+            <label>
+              最大尝试次数
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={policy.maxAttempts}
+                onChange={(event) =>
+                  setPolicy({
+                    ...policy,
+                    maxAttempts: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+          <fieldset className="deployment-options">
+            <legend>参与路由的模型</legend>
             {(deployments.data ?? []).map((item) => (
               <label className="checkbox" key={item.id}>
                 <input
@@ -2904,28 +2949,56 @@ function ModelsPanel({
                 {item.name}
               </label>
             ))}
+          </fieldset>
+          <div className="policy-options-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={policy.failoverOnFailure}
+                onChange={(event) =>
+                  setPolicy({
+                    ...policy,
+                    failoverOnFailure: event.target.checked,
+                  })
+                }
+              />
+              失败时切换下一个
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={policy.enabled}
+                onChange={(event) =>
+                  setPolicy({ ...policy, enabled: event.target.checked })
+                }
+              />
+              启用策略
+            </label>
+            {policy.mode === "fixed" && (
+              <label>
+                固定使用的模型
+                <select
+                  aria-label="固定模型"
+                  value={policy.fixedDeploymentId}
+                  onChange={(event) =>
+                    setPolicy({
+                      ...policy,
+                      fixedDeploymentId: event.target.value,
+                    })
+                  }
+                >
+                  <option value="">使用第一个已选模型</option>
+                  {(deployments.data ?? [])
+                    .filter((item) => policy.deploymentIds.includes(item.id))
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )}
           </div>
-          {policy.mode === "fixed" && (
-            <select
-              aria-label="固定模型"
-              value={policy.fixedDeploymentId}
-              onChange={(event) =>
-                setPolicy({
-                  ...policy,
-                  fixedDeploymentId: event.target.value,
-                })
-              }
-            >
-              <option value="">使用第一个已选模型</option>
-              {(deployments.data ?? [])
-                .filter((item) => policy.deploymentIds.includes(item.id))
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-            </select>
-          )}
           <button
             className="primary"
             onClick={() => savePolicy.mutate()}
@@ -3376,8 +3449,9 @@ function ChannelsPanel() {
             <details className="advanced-config wide-field">
               <summary>
                 <Settings size={16} />
-                高级配置
+                高级配置 <small>飞书事件验签与适配器参数</small>
               </summary>
+              <p className="advanced-description">Webhook 接收方式通常需要 Verification Token 和 Encrypt Key，值应与飞书开放平台一致。适配器 JSON 只给已启用的通道适配器使用；不确定时保持 <code>{'{}'}</code>。</p>
               <div className="advanced-grid">
                 <label>
                   Verification Token
@@ -4278,8 +4352,9 @@ function BotsPanel() {
             <details className="advanced-config wide-field">
               <summary>
                 <Settings size={16} />
-                高级配置
+                高级配置 <small>兼容运行时与安全边界</small>
               </summary>
+              <p className="advanced-description">运行方案未配置时才使用兼容 Runtime；只读模式会阻止有副作用的能力。普通机器人通常保持默认的标准模式和已授权能力。</p>
               <div className="advanced-grid">
                 <label>
                   兼容 Runtime
@@ -5414,8 +5489,9 @@ function CapabilitiesPanel({
             <details className="advanced-config wide-field">
               <summary>
                 <Settings size={16} />
-                高级配置
+                高级配置 <small>触发范围、凭据与能力专用参数</small>
               </summary>
+              <p className="advanced-description">触发方式限定能力可由哪些入口调用；凭据引用应填写治理中心中已保存的引用 ID，绝不填写密钥本身。JSON 仅用于该能力声明的专用参数。</p>
               <div className="advanced-grid">
                 <label>
                   允许的触发方式
