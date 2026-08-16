@@ -490,7 +490,7 @@ nav button.active {
 table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: auto;
+  table-layout: fixed;
   min-width: 900px;
 }
 th,
@@ -1135,7 +1135,11 @@ progress {
   display: grid;
   gap: 24px;
 }
+.stack > * {
+  min-width: 0;
+}
 .section-band {
+  min-width: 0;
   background: #fff;
   border: 1px solid #dce4df;
   padding: 16px;
