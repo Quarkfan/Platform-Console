@@ -307,7 +307,7 @@ function Login() {
     try {
       const result = await authClient.signIn.username({ username, password });
       if (result.error) {
-        setError(result.error.message ?? "用户名或密码错误");
+        setError("用户名或密码错误");
         return;
       }
       try {
