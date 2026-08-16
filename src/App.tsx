@@ -6493,6 +6493,7 @@ function RuntimeExtensionsPanel({ isAdmin }: { isAdmin: boolean }) {
                   <strong>{record.descriptor.displayName}</strong>
                   <span>
                     {record.descriptor.providerId} · {record.descriptor.family}
+                    {record.generation ? ` · 第 ${record.generation} 代` : ""}
                   </span>
                 </div>
                 <span
@@ -6572,6 +6573,32 @@ function RuntimeExtensionsPanel({ isAdmin }: { isAdmin: boolean }) {
             <div>
               <span>契约版本</span>
               <strong>{selectedPlatform.descriptor.contractVersion}</strong>
+            </div>
+            <div>
+              <span>持久化代次</span>
+              <strong>第 {selectedPlatform.generation ?? 1} 代</strong>
+            </div>
+            <div>
+              <span>安装时间</span>
+              <strong>
+                {selectedPlatform.installedAt
+                  ? new Date(selectedPlatform.installedAt).toLocaleString()
+                  : "未记录"}
+              </strong>
+            </div>
+            <div>
+              <span>状态更新时间</span>
+              <strong>
+                {selectedPlatform.updatedAt
+                  ? new Date(selectedPlatform.updatedAt).toLocaleString()
+                  : "未记录"}
+              </strong>
+            </div>
+            <div>
+              <span>最近探针</span>
+              <strong>
+                {selectedPlatform.lastProbe?.status ?? "尚未检测"}
+              </strong>
             </div>
           </div>
           <div className="detail-columns">
