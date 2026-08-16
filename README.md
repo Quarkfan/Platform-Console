@@ -6,4 +6,6 @@ Authenticated operations console and BFF for QuarkfanTools 3.0. It exposes cente
 
 The navigation and list/detail interaction contract is documented in `docs/information-architecture.md`.
 
+Authentication supports the production HTTPS origin and the operator's loopback SSH-tunnel origin without weakening public cookies. Loopback cookie handling is selected only for `127.0.0.1`, `localhost` and `::1`; all other hosts use the Secure production auth instance.
+
 The “扩展与插件” page manages Runtime Providers, revisioned Runtime Profiles and the cross-center extension inventory. Provider detail pages expose capability negotiation, isolation, probe, lifecycle and logs. Lifecycle changes are admin-only in both UI and BFF authorization.

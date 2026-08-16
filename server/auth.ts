@@ -2,23 +2,35 @@ import { betterAuth } from "better-auth";
 import { admin, username } from "better-auth/plugins";
 import { getMigrations } from "better-auth/db/migration";
 import { Pool } from "pg";
-export function createAuth(pool: Pool, allowSignup = false) {
+
+type AuthOverrides = {
+  baseURL?: string;
+  secureCookies?: boolean;
+  trustedOrigins?: string[];
+};
+
+const configuredOrigins = () =>
+  (process.env.TRUSTED_ORIGINS ?? process.env.BETTER_AUTH_URL ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+export function createAuth(
+  pool: Pool,
+  allowSignup = false,
+  overrides: AuthOverrides = {},
+) {
   const secureCookies =
-    process.env.AUTH_SECURE_COOKIES === undefined
+    overrides.secureCookies ??
+    (process.env.AUTH_SECURE_COOKIES === undefined
       ? process.env.NODE_ENV === "production"
-      : process.env.AUTH_SECURE_COOKIES === "true";
+      : process.env.AUTH_SECURE_COOKIES === "true");
   return betterAuth({
     appName: "QuarkfanTools",
     database: pool,
-    baseURL: process.env.BETTER_AUTH_URL,
+    baseURL: overrides.baseURL ?? process.env.BETTER_AUTH_URL,
     secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: (
-      process.env.TRUSTED_ORIGINS ??
-      process.env.BETTER_AUTH_URL ??
-      ""
-    )
-      .split(",")
-      .filter(Boolean),
+    trustedOrigins: overrides.trustedOrigins ?? configuredOrigins(),
     emailAndPassword: {
       enabled: true,
       disableSignUp: !allowSignup,
@@ -30,7 +42,10 @@ export function createAuth(pool: Pool, allowSignup = false) {
       admin({ defaultRole: "viewer", adminRoles: ["admin"] }),
     ],
     session: { expiresIn: 60 * 60 * 12, updateAge: 60 * 30 },
-    advanced: { useSecureCookies: secureCookies },
+    advanced: {
+      useSecureCookies: secureCookies,
+      ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
+    },
   });
 }
 export async function prepareAuth(databaseUrl: string) {
@@ -87,8 +102,25 @@ export async function prepareAuth(databaseUrl: string) {
       ["admin"],
     );
   }
+  const port = process.env.PORT ?? "8080";
+  const loopbackBaseURL =
+    process.env.LOOPBACK_AUTH_URL ?? `http://127.0.0.1:${port}`;
+  const loopbackOrigins = (
+    process.env.LOOPBACK_TRUSTED_ORIGINS ??
+    [loopbackBaseURL, `http://localhost:${port}`, `http://[::1]:${port}`].join(
+      ",",
+    )
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   return {
     auth: createAuth(pool, false),
+    loopbackAuth: createAuth(pool, false, {
+      baseURL: loopbackBaseURL,
+      secureCookies: false,
+      trustedOrigins: loopbackOrigins,
+    }),
     pool,
     async passwordChangeRequired(userId: string) {
       return Boolean(

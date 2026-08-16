@@ -19,6 +19,7 @@ import {
 const mutating = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 export function buildServer(o: {
   auth: ConsoleAuth;
+  loopbackAuth?: ConsoleAuth;
   internalToken: string;
   staticRoot?: string;
   larkOAuthRedirectBaseUrl?: string;
@@ -30,6 +31,29 @@ export function buildServer(o: {
     trustProxy: true,
     bodyLimit: 32 * 1024 * 1024,
   });
+  const isLoopbackHost = (host?: string) => {
+    if (!host) return false;
+    try {
+      const hostname = new URL(`http://${host}`).hostname;
+      return (
+        hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname === "[::1]"
+      );
+    } catch {
+      return false;
+    }
+  };
+  const authFor = (request: any) =>
+    isLoopbackHost(request.headers.host) && o.loopbackAuth
+      ? o.loopbackAuth
+      : o.auth;
+  const authHeaders = (request: any) => {
+    const headers = fromNodeHeaders(request.headers);
+    if (!headers.has("x-forwarded-for"))
+      headers.set("x-forwarded-for", request.ip);
+    return headers;
+  };
   app.get("/healthz", async () => ({
     ok: true,
     data: { service: "platform-console", status: "ok" },
@@ -46,10 +70,10 @@ export function buildServer(o: {
         request.url,
         `${request.protocol}://${request.headers.host}`,
       );
-      const response = await o.auth.handler(
+      const response = await authFor(request).handler(
         new Request(url, {
           method: request.method,
-          headers: fromNodeHeaders(request.headers),
+          headers: authHeaders(request),
           ...(request.body ? { body: JSON.stringify(request.body) } : {}),
         }),
       );
@@ -63,8 +87,8 @@ export function buildServer(o: {
     reply: any,
     allowPasswordChange = false,
   ) => {
-    const value = await o.auth.api.getSession({
-      headers: fromNodeHeaders(request.headers),
+    const value = await authFor(request).api.getSession({
+      headers: authHeaders(request),
     });
     if (!value) {
       reply.code(401).send({ ok: false, error: { code: "UNAUTHORIZED" } });
@@ -156,8 +180,8 @@ export function buildServer(o: {
       })
       .parse(request.body);
     try {
-      await o.auth.api.changePassword({
-        headers: fromNodeHeaders(request.headers),
+      await authFor(request).api.changePassword({
+        headers: authHeaders(request),
         body: { ...body, revokeOtherSessions: true },
       });
       await o.markPasswordChanged?.(current.user.id);

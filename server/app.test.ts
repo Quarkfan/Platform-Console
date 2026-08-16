@@ -115,4 +115,47 @@ describe("Console account security", () => {
     expect(response.json().error.code).toBe("ADMIN_REQUIRED");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("uses an isolated non-secure auth instance only for loopback hosts", async () => {
+    const publicSession = vi.fn(async () => ({
+      session: { id: "public-session" },
+      user: { id: "public-user", name: "public", role: "admin" },
+    }));
+    const loopbackSession = vi.fn(async () => ({
+      session: { id: "loopback-session" },
+      user: { id: "loopback-user", name: "loopback", role: "admin" },
+    }));
+    const app = buildServer({
+      auth: {
+        handler: vi.fn(),
+        api: { getSession: publicSession },
+      } as any,
+      loopbackAuth: {
+        handler: vi.fn(),
+        api: { getSession: loopbackSession },
+      } as any,
+      internalToken: "test",
+      passwordChangeRequired: async () => false,
+    });
+    apps.push(app);
+
+    const local = await app.inject({
+      method: "GET",
+      url: "/api/me",
+      headers: { host: "127.0.0.1:8080" },
+    });
+    expect(local.statusCode).toBe(200);
+    expect(local.json().data.user.id).toBe("loopback-user");
+    expect(loopbackSession).toHaveBeenCalledOnce();
+    expect(publicSession).not.toHaveBeenCalled();
+
+    const publicResponse = await app.inject({
+      method: "GET",
+      url: "/api/me",
+      headers: { host: "tool.quarkfan.com" },
+    });
+    expect(publicResponse.statusCode).toBe(200);
+    expect(publicResponse.json().data.user.id).toBe("public-user");
+    expect(publicSession).toHaveBeenCalledOnce();
+  });
 });

@@ -9,10 +9,11 @@ if (
   process.env.BETTER_AUTH_SECRET.length < 32
 )
   throw new Error("BETTER_AUTH_SECRET must contain at least 32 characters");
-const { auth, passwordChangeRequired, markPasswordChanged } =
+const { auth, loopbackAuth, passwordChangeRequired, markPasswordChanged } =
   await prepareAuth(databaseUrl);
 await buildServer({
   auth,
+  loopbackAuth,
   internalToken: requireInternalServiceToken(),
   staticRoot: join(process.cwd(), "dist"),
   larkOAuthRedirectBaseUrl:

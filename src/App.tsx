@@ -304,10 +304,25 @@ function Login() {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const result = await authClient.signIn.username({ username, password });
-    setBusy(false);
-    if (result.error) setError(result.error.message ?? "登录失败");
-    else location.reload();
+    try {
+      const result = await authClient.signIn.username({ username, password });
+      if (result.error) {
+        setError(result.error.message ?? "用户名或密码错误");
+        return;
+      }
+      try {
+        await api("/api/me");
+        location.reload();
+      } catch {
+        setError(
+          "密码验证成功，但登录会话未能保存。请刷新页面后重试；通过 SSH 隧道访问时请使用 127.0.0.1 或 localhost。",
+        );
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "登录请求失败");
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <main className="login">
