@@ -87,4 +87,32 @@ describe("Console account security", () => {
       version: "0.1.0",
     });
   });
+
+  it("reserves extension lifecycle mutations for administrators", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const app = buildServer({
+      auth: {
+        handler: vi.fn(),
+        api: {
+          getSession: vi.fn(async () => ({
+            session: { id: "session-1" },
+            user: { id: "user-1", name: "operator", role: "operator" },
+          })),
+        },
+      } as any,
+      internalToken: "test",
+      passwordChangeRequired: async () => false,
+    });
+    apps.push(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/center/runtime/v1/runtime-providers/runtime.model-tool-loop/lifecycle/disabled",
+      headers: { host: "console.test", origin: "http://console.test" },
+      payload: {},
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe("ADMIN_REQUIRED");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

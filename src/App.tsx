@@ -23,6 +23,7 @@ import {
   Play,
   Pause,
   Plus,
+  Plug,
   Radio,
   RefreshCw,
   RotateCcw,
@@ -57,6 +58,7 @@ const navGroups: Array<{ label: string; items: Nav[] }> = [
       { id: "context", label: "上下文", icon: Brain },
       { id: "models", label: "模型", icon: Sparkles },
       { id: "capabilities", label: "能力", icon: Boxes },
+      { id: "runtime-extensions", label: "扩展与插件", icon: Plug },
     ],
   },
   {
@@ -3459,6 +3461,11 @@ function BotsPanel() {
     queryKey: ["model-policies"],
     queryFn: () => center<any[]>("mh", "/v1/routing-policies"),
   });
+  const profiles = useQuery({
+    queryKey: ["runtime-profiles"],
+    queryFn: () =>
+      center<any[]>("runtime", "/v1/runtime-profiles?tenantId=default"),
+  });
   const channels = useQuery({
     queryKey: ["channels"],
     queryFn: () => center<any[]>("mg", "/v1/channels"),
@@ -3475,6 +3482,7 @@ function BotsPanel() {
     name: "",
     enabled: true,
     runtime: "model-tool-loop",
+    runtimeProfileId: "",
     modelPolicyId: "",
     systemPrompt: "",
     description: "",
@@ -3501,6 +3509,7 @@ function BotsPanel() {
           body: JSON.stringify({
             ...draft,
             modelPolicyId: draft.modelPolicyId || undefined,
+            runtimeProfileId: draft.runtimeProfileId || undefined,
             systemPrompt: draft.systemPrompt || undefined,
           }),
         },
@@ -3865,16 +3874,21 @@ function BotsPanel() {
               />
             </label>
             <label>
-              Runtime
+              Runtime Profile
               <select
-                value={draft.runtime}
+                value={draft.runtimeProfileId}
                 onChange={(e) =>
-                  setDraft({ ...draft, runtime: e.target.value })
+                  setDraft({ ...draft, runtimeProfileId: e.target.value })
                 }
               >
-                <option value="model-tool-loop">Model Tool Loop</option>
-                <option value="openai-agents">OpenAI Agents SDK</option>
-                <option value="claude-code">Claude Agent SDK</option>
+                <option value="">兼容模式（使用旧 Runtime 字段）</option>
+                {(profiles.data ?? [])
+                  .filter((profile) => profile.enabled)
+                  .map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name} · r{profile.revision}
+                    </option>
+                  ))}
               </select>
             </label>
             <label>
@@ -3909,6 +3923,20 @@ function BotsPanel() {
                 高级配置
               </summary>
               <div className="advanced-grid">
+                <label>
+                  兼容 Runtime
+                  <select
+                    value={draft.runtime}
+                    disabled={Boolean(draft.runtimeProfileId)}
+                    onChange={(event) =>
+                      setDraft({ ...draft, runtime: event.target.value })
+                    }
+                  >
+                    <option value="model-tool-loop">Model Tool Loop</option>
+                    <option value="openai-agents">OpenAI Agents SDK</option>
+                    <option value="claude-code">Claude Code SDK</option>
+                  </select>
+                </label>
                 <label className="wide-field">
                   描述
                   <textarea
@@ -5786,6 +5814,803 @@ function Manual({ navigate }: { navigate: (page: string) => void }) {
   );
 }
 
+function RuntimeExtensionsPanel({ isAdmin }: { isAdmin: boolean }) {
+  const client = useQueryClient();
+  const [mode, setMode] = useState<"providers" | "profiles" | "platform">(
+    "providers",
+  );
+  const [selectedProvider, setSelectedProvider] = useState<any>();
+  const [selectedPlatform, setSelectedPlatform] = useState<any>();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const emptyProfile = {
+    id: "",
+    tenantId: "default",
+    name: "",
+    description: "",
+    enabled: true,
+    runtimeProviderId: "",
+    modelPolicyId: "",
+    contextPolicyId: "",
+    capabilityBindingSetId: "",
+    governancePolicyId: "",
+    workspacePolicyId: "",
+    promptSectionRefs: "",
+    limitsJson: '{\n  "maxTurns": 8\n}',
+    fallbackProviderIds: [] as string[],
+  };
+  const [profile, setProfile] = useState(emptyProfile);
+  const providers = useQuery({
+    queryKey: ["runtime-providers"],
+    queryFn: () => center<any[]>("runtime", "/v1/runtime-providers"),
+    refetchInterval: 15_000,
+  });
+  const profiles = useQuery({
+    queryKey: ["runtime-profiles"],
+    queryFn: () =>
+      center<any[]>("runtime", "/v1/runtime-profiles?tenantId=default"),
+  });
+  const platformExtensions = useQuery({
+    queryKey: ["platform-extensions"],
+    queryFn: async () => {
+      const centers = [
+        "mg",
+        "ch",
+        "mh",
+        "cr",
+        "scheduler",
+        "resource",
+        "governance",
+      ];
+      const values = await Promise.allSettled(
+        centers.map(async (centerName) => ({
+          center: centerName,
+          items: await center<any[]>(centerName, "/v1/extensions"),
+        })),
+      );
+      return values.flatMap((result, index) => {
+        if (result.status === "fulfilled") {
+          return result.value.items.map((item) => ({
+            ...item,
+            center: result.value.center,
+          }));
+        }
+        return [
+          {
+            center: centers[index],
+            unavailable: true,
+            error: String(result.reason),
+            lifecycleState: "unavailable",
+            descriptor: {
+              providerId: `${centers[index]}.extension-catalog`,
+              displayName: `${centers[index].toUpperCase()} 扩展目录不可用`,
+              family: "control-plane",
+              isolation: "unavailable",
+              capabilities: {},
+            },
+          },
+        ];
+      });
+    },
+    refetchInterval: 15_000,
+  });
+  const providerLogs = useQuery({
+    queryKey: [
+      "runtime-provider-logs",
+      selectedProvider?.descriptor?.providerId,
+    ],
+    queryFn: () =>
+      center<any[]>(
+        "runtime",
+        `/v1/runtime-providers/${encodeURIComponent(selectedProvider.descriptor.providerId)}/logs`,
+      ),
+    enabled: Boolean(selectedProvider),
+  });
+  const platformLogs = useQuery({
+    queryKey: [
+      "platform-extension-logs",
+      selectedPlatform?.center,
+      selectedPlatform?.descriptor?.providerId,
+    ],
+    queryFn: () =>
+      center<any[]>(
+        selectedPlatform.center,
+        `/v1/extensions/${encodeURIComponent(selectedPlatform.descriptor.providerId)}/logs`,
+      ),
+    enabled: Boolean(selectedPlatform),
+  });
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: ["runtime-providers"] });
+    void client.invalidateQueries({ queryKey: ["runtime-profiles"] });
+    void client.invalidateQueries({ queryKey: ["runtime-provider-logs"] });
+    void client.invalidateQueries({ queryKey: ["platform-extensions"] });
+    void client.invalidateQueries({ queryKey: ["platform-extension-logs"] });
+  };
+  const probe = useMutation({
+    mutationFn: (id: string) =>
+      center(
+        "runtime",
+        `/v1/runtime-providers/${encodeURIComponent(id)}/probe`,
+        {
+          method: "POST",
+          body: "{}",
+        },
+      ),
+    onSuccess: refresh,
+  });
+  const lifecycle = useMutation({
+    mutationFn: ({ id, state }: { id: string; state: string }) =>
+      center(
+        "runtime",
+        `/v1/runtime-providers/${encodeURIComponent(id)}/lifecycle/${state}`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: (record: any) => {
+      setSelectedProvider(record);
+      refresh();
+    },
+  });
+  const platformProbe = useMutation({
+    mutationFn: (item: any) =>
+      center(
+        item.center,
+        `/v1/extensions/${encodeURIComponent(item.descriptor.providerId)}/probe`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: refresh,
+  });
+  const platformLifecycle = useMutation({
+    mutationFn: ({ item, state }: { item: any; state: string }) =>
+      center(
+        item.center,
+        `/v1/extensions/${encodeURIComponent(item.descriptor.providerId)}/lifecycle/${state}`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: (record: any, variables) => {
+      setSelectedPlatform({ ...record, center: variables.item.center });
+      refresh();
+    },
+  });
+  const saveProfile = useMutation({
+    mutationFn: () => {
+      const body = {
+        id: profile.id || randomUuid(),
+        tenantId: profile.tenantId,
+        name: profile.name,
+        description: profile.description || undefined,
+        enabled: profile.enabled,
+        runtimeProviderId: profile.runtimeProviderId,
+        modelPolicyId: profile.modelPolicyId || undefined,
+        contextPolicyId: profile.contextPolicyId || undefined,
+        capabilityBindingSetId: profile.capabilityBindingSetId || undefined,
+        governancePolicyId: profile.governancePolicyId || undefined,
+        workspacePolicyId: profile.workspacePolicyId || undefined,
+        promptSectionRefs: profile.promptSectionRefs
+          .split(/[,，\s]+/)
+          .filter(Boolean),
+        limits: parseObjectJson(profile.limitsJson, "运行限制"),
+        fallbackProviderIds: profile.fallbackProviderIds,
+      };
+      return center(
+        "runtime",
+        profile.id
+          ? `/v1/runtime-profiles/${profile.id}`
+          : "/v1/runtime-profiles",
+        { method: profile.id ? "PUT" : "POST", body: JSON.stringify(body) },
+      );
+    },
+    onSuccess: () => {
+      setProfile({ ...emptyProfile, fallbackProviderIds: [] });
+      setEditorOpen(false);
+      refresh();
+    },
+  });
+  const removeProfile = useMutation({
+    mutationFn: (id: string) =>
+      center("runtime", `/v1/runtime-profiles/${id}`, { method: "DELETE" }),
+    onSuccess: refresh,
+  });
+  const openProfile = (item?: any) => {
+    setProfile(
+      item
+        ? {
+            ...emptyProfile,
+            ...item,
+            description: item.description ?? "",
+            modelPolicyId: item.modelPolicyId ?? "",
+            contextPolicyId: item.contextPolicyId ?? "",
+            capabilityBindingSetId: item.capabilityBindingSetId ?? "",
+            governancePolicyId: item.governancePolicyId ?? "",
+            workspacePolicyId: item.workspacePolicyId ?? "",
+            promptSectionRefs: (item.promptSectionRefs ?? []).join(", "),
+            limitsJson: JSON.stringify(item.limits ?? {}, null, 2),
+            fallbackProviderIds: [...(item.fallbackProviderIds ?? [])],
+          }
+        : { ...emptyProfile, fallbackProviderIds: [] },
+    );
+    setEditorOpen(true);
+  };
+  const transitionActions: Record<string, Array<[string, string]>> = {
+    installed: [["验证", "verified"]],
+    verified: [
+      ["启用", "active"],
+      ["灰度", "canary"],
+    ],
+    canary: [
+      ["转为正式", "active"],
+      ["排空", "draining"],
+    ],
+    active: [
+      ["排空", "draining"],
+      ["停用", "disabled"],
+    ],
+    draining: [
+      ["恢复", "active"],
+      ["停用", "disabled"],
+    ],
+    disabled: [["重新验证", "verified"]],
+    failed: [["重新验证", "verified"]],
+    retired: [],
+  };
+  const error =
+    probe.error ??
+    lifecycle.error ??
+    platformProbe.error ??
+    platformLifecycle.error ??
+    saveProfile.error ??
+    removeProfile.error;
+  return (
+    <div className="stack runtime-extension-workspace">
+      <div
+        className="segmented-control"
+        role="tablist"
+        aria-label="运行时扩展视图"
+      >
+        <button
+          className={mode === "providers" ? "active" : ""}
+          onClick={() => setMode("providers")}
+        >
+          Provider
+        </button>
+        <button
+          className={mode === "profiles" ? "active" : ""}
+          onClick={() => setMode("profiles")}
+        >
+          Runtime Profile
+        </button>
+        <button
+          className={mode === "platform" ? "active" : ""}
+          onClick={() => setMode("platform")}
+        >
+          平台扩展
+        </button>
+      </div>
+      {mode === "providers" && !selectedProvider && (
+        <section className="section-band">
+          <div className="section-title">
+            <h3>Runtime Provider</h3>
+            <span>{providers.data?.length ?? 0} 个已安装实现</span>
+          </div>
+          <div className="model-entity-list">
+            {(providers.data ?? []).map((record) => (
+              <button
+                className="model-entity-row selectable-row"
+                key={record.descriptor.providerId}
+                onClick={() => setSelectedProvider(record)}
+              >
+                <div>
+                  <strong>{record.descriptor.displayName}</strong>
+                  <span>
+                    {record.descriptor.providerId} · {record.descriptor.version}
+                  </span>
+                </div>
+                <span
+                  className={`status-pill ${record.lifecycleState === "active" ? "ready" : "degraded"}`}
+                >
+                  {record.lifecycleState}
+                </span>
+                <code>{record.descriptor.isolation}</code>
+                <ChevronRight size={17} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {mode === "providers" && selectedProvider && (
+        <section className="section-band provider-detail">
+          <div className="section-title">
+            <div>
+              <h3>{selectedProvider.descriptor.displayName}</h3>
+              <span>{selectedProvider.descriptor.providerId}</span>
+            </div>
+            <div className="section-actions">
+              <button
+                className="secondary compact-button"
+                onClick={() => setSelectedProvider(undefined)}
+              >
+                返回列表
+              </button>
+              <button
+                className="secondary compact-button"
+                onClick={() =>
+                  probe.mutate(selectedProvider.descriptor.providerId)
+                }
+                disabled={probe.isPending}
+              >
+                <Activity size={16} />
+                检测
+              </button>
+              {isAdmin &&
+                (transitionActions[selectedProvider.lifecycleState] ?? []).map(
+                  ([label, state]) => (
+                    <button
+                      className="primary compact-button"
+                      key={state}
+                      onClick={() =>
+                        lifecycle.mutate({
+                          id: selectedProvider.descriptor.providerId,
+                          state,
+                        })
+                      }
+                      disabled={lifecycle.isPending}
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+            </div>
+          </div>
+          <div className="detail-facts">
+            <div>
+              <span>生命周期</span>
+              <strong>{selectedProvider.lifecycleState}</strong>
+            </div>
+            <div>
+              <span>隔离方式</span>
+              <strong>{selectedProvider.descriptor.isolation}</strong>
+            </div>
+            <div>
+              <span>契约版本</span>
+              <strong>{selectedProvider.descriptor.contractVersion}</strong>
+            </div>
+            <div>
+              <span>最近探针</span>
+              <strong>
+                {selectedProvider.lastProbe?.status ?? "尚未检测"}
+              </strong>
+            </div>
+          </div>
+          <div className="detail-columns">
+            <div>
+              <h4>能力协商</h4>
+              <div className="capability-matrix">
+                {Object.entries(
+                  selectedProvider.descriptor.capabilities ?? {},
+                ).map(([name, enabled]) => (
+                  <div key={name}>
+                    <span>{name}</span>
+                    <strong>{String(enabled)}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h4>生命周期日志</h4>
+              <div className="compact-log">
+                {(providerLogs.data ?? []).map((entry) => (
+                  <div key={entry.id}>
+                    <span>{new Date(entry.createdAt).toLocaleString()}</span>
+                    <strong>{entry.action}</strong>
+                    <p>{entry.message}</p>
+                  </div>
+                ))}
+                {!providerLogs.data?.length && (
+                  <div className="empty">暂无日志</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+      {mode === "profiles" && !editorOpen && (
+        <section className="section-band">
+          <div className="section-title">
+            <h3>Runtime Profile</h3>
+            <div className="section-actions">
+              <span>{profiles.data?.length ?? 0} 个</span>
+              <button
+                className="primary compact-button"
+                onClick={() => openProfile()}
+              >
+                <Plus size={16} />
+                新建 Profile
+              </button>
+            </div>
+          </div>
+          <div className="model-entity-list">
+            {(profiles.data ?? []).map((item) => (
+              <div className="model-entity-row" key={item.id}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>
+                    r{item.revision} · {item.enabled ? "已启用" : "已停用"}
+                  </span>
+                </div>
+                <code>{item.runtimeProviderId}</code>
+                <div className="row-actions">
+                  <button
+                    className="icon-button"
+                    title="编辑 Profile"
+                    onClick={() => openProfile(item)}
+                  >
+                    <Settings size={16} />
+                  </button>
+                  <button
+                    className="icon-button danger-button"
+                    title="删除 Profile"
+                    onClick={() =>
+                      window.confirm(`确认删除“${item.name}”？`) &&
+                      removeProfile.mutate(item.id)
+                    }
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!profiles.isLoading && !profiles.data?.length && (
+              <div className="empty">暂无 Runtime Profile</div>
+            )}
+          </div>
+        </section>
+      )}
+      {mode === "profiles" && editorOpen && (
+        <section className="section-band">
+          <div className="section-title">
+            <h3>
+              {profile.id ? "编辑 Runtime Profile" : "新建 Runtime Profile"}
+            </h3>
+            <button
+              className="secondary compact-button"
+              onClick={() => setEditorOpen(false)}
+            >
+              返回列表
+            </button>
+          </div>
+          <div className="runtime-profile-form">
+            <label>
+              名称
+              <input
+                value={profile.name}
+                onChange={(event) =>
+                  setProfile({ ...profile, name: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              Runtime Provider
+              <select
+                value={profile.runtimeProviderId}
+                onChange={(event) =>
+                  setProfile({
+                    ...profile,
+                    runtimeProviderId: event.target.value,
+                  })
+                }
+              >
+                <option value="">选择 Provider</option>
+                {(providers.data ?? [])
+                  .filter((record) =>
+                    ["active", "canary"].includes(record.lifecycleState),
+                  )
+                  .map((record) => (
+                    <option
+                      key={record.descriptor.providerId}
+                      value={record.descriptor.providerId}
+                    >
+                      {record.descriptor.displayName}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="wide-field">
+              描述
+              <textarea
+                rows={3}
+                value={profile.description}
+                onChange={(event) =>
+                  setProfile({ ...profile, description: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              模型策略 ID
+              <input
+                value={profile.modelPolicyId}
+                onChange={(event) =>
+                  setProfile({ ...profile, modelPolicyId: event.target.value })
+                }
+              />
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={profile.enabled}
+                onChange={(event) =>
+                  setProfile({ ...profile, enabled: event.target.checked })
+                }
+              />
+              启用
+            </label>
+            <details className="advanced-config wide-field">
+              <summary>
+                <Settings size={16} />
+                高级组合配置
+              </summary>
+              <div className="advanced-grid">
+                <label>
+                  上下文策略 ID
+                  <input
+                    value={profile.contextPolicyId}
+                    onChange={(event) =>
+                      setProfile({
+                        ...profile,
+                        contextPolicyId: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  能力绑定集 ID
+                  <input
+                    value={profile.capabilityBindingSetId}
+                    onChange={(event) =>
+                      setProfile({
+                        ...profile,
+                        capabilityBindingSetId: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  治理策略 ID
+                  <input
+                    value={profile.governancePolicyId}
+                    onChange={(event) =>
+                      setProfile({
+                        ...profile,
+                        governancePolicyId: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  工作区策略 ID
+                  <input
+                    value={profile.workspacePolicyId}
+                    onChange={(event) =>
+                      setProfile({
+                        ...profile,
+                        workspacePolicyId: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide-field">
+                  提示词片段引用
+                  <input
+                    value={profile.promptSectionRefs}
+                    onChange={(event) =>
+                      setProfile({
+                        ...profile,
+                        promptSectionRefs: event.target.value,
+                      })
+                    }
+                    placeholder="多个引用用逗号分隔"
+                  />
+                </label>
+                <label className="wide-field">
+                  运行限制（JSON）
+                  <textarea
+                    rows={5}
+                    spellCheck={false}
+                    value={profile.limitsJson}
+                    onChange={(event) =>
+                      setProfile({ ...profile, limitsJson: event.target.value })
+                    }
+                  />
+                </label>
+                <fieldset className="wide-field">
+                  <legend>准入备用 Provider</legend>
+                  {(providers.data ?? [])
+                    .filter(
+                      (record) =>
+                        record.descriptor.providerId !==
+                        profile.runtimeProviderId,
+                    )
+                    .map((record) => (
+                      <label
+                        className="checkbox"
+                        key={record.descriptor.providerId}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={profile.fallbackProviderIds.includes(
+                            record.descriptor.providerId,
+                          )}
+                          onChange={(event) =>
+                            setProfile({
+                              ...profile,
+                              fallbackProviderIds: event.target.checked
+                                ? [
+                                    ...profile.fallbackProviderIds,
+                                    record.descriptor.providerId,
+                                  ]
+                                : profile.fallbackProviderIds.filter(
+                                    (id) => id !== record.descriptor.providerId,
+                                  ),
+                            })
+                          }
+                        />
+                        {record.descriptor.displayName}
+                      </label>
+                    ))}
+                </fieldset>
+              </div>
+            </details>
+            <button
+              className="primary"
+              disabled={
+                !profile.name ||
+                !profile.runtimeProviderId ||
+                saveProfile.isPending
+              }
+              onClick={() => saveProfile.mutate()}
+            >
+              <Check size={16} />
+              保存 Profile
+            </button>
+          </div>
+        </section>
+      )}
+      {mode === "platform" && !selectedPlatform && (
+        <section className="section-band">
+          <div className="section-title">
+            <h3>跨中心扩展目录</h3>
+            <span>{platformExtensions.data?.length ?? 0} 个 Provider</span>
+          </div>
+          <div className="model-entity-list">
+            {(platformExtensions.data ?? []).map((record) => (
+              <button
+                className="model-entity-row selectable-row"
+                key={`${record.center}:${record.descriptor.providerId}`}
+                onClick={() =>
+                  !record.unavailable && setSelectedPlatform(record)
+                }
+                disabled={record.unavailable}
+                title={record.unavailable ? record.error : undefined}
+              >
+                <div>
+                  <strong>{record.descriptor.displayName}</strong>
+                  <span>
+                    {record.descriptor.providerId} · {record.descriptor.family}
+                  </span>
+                </div>
+                <span
+                  className={`status-pill ${record.lifecycleState === "active" ? "ready" : "degraded"}`}
+                >
+                  {record.lifecycleState}
+                </span>
+                <code>
+                  {record.center.toUpperCase()} · {record.descriptor.isolation}
+                </code>
+                <ChevronRight size={17} />
+              </button>
+            ))}
+            {!platformExtensions.isLoading &&
+              !platformExtensions.data?.length && (
+                <div className="empty">暂无平台扩展</div>
+              )}
+          </div>
+        </section>
+      )}
+      {mode === "platform" && selectedPlatform && (
+        <section className="section-band provider-detail">
+          <div className="section-title">
+            <div>
+              <h3>{selectedPlatform.descriptor.displayName}</h3>
+              <span>
+                {selectedPlatform.center.toUpperCase()} ·{" "}
+                {selectedPlatform.descriptor.providerId}
+              </span>
+            </div>
+            <div className="section-actions">
+              <button
+                className="secondary compact-button"
+                onClick={() => setSelectedPlatform(undefined)}
+              >
+                返回列表
+              </button>
+              <button
+                className="secondary compact-button"
+                onClick={() => platformProbe.mutate(selectedPlatform)}
+              >
+                <Activity size={16} />
+                检测
+              </button>
+              {isAdmin &&
+                (transitionActions[selectedPlatform.lifecycleState] ?? []).map(
+                  ([label, state]) => (
+                    <button
+                      className="primary compact-button"
+                      key={state}
+                      onClick={() =>
+                        platformLifecycle.mutate({
+                          item: selectedPlatform,
+                          state,
+                        })
+                      }
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+            </div>
+          </div>
+          <div className="detail-facts">
+            <div>
+              <span>所属中心</span>
+              <strong>{selectedPlatform.center.toUpperCase()}</strong>
+            </div>
+            <div>
+              <span>生命周期</span>
+              <strong>{selectedPlatform.lifecycleState}</strong>
+            </div>
+            <div>
+              <span>隔离方式</span>
+              <strong>{selectedPlatform.descriptor.isolation}</strong>
+            </div>
+            <div>
+              <span>契约版本</span>
+              <strong>{selectedPlatform.descriptor.contractVersion}</strong>
+            </div>
+          </div>
+          <div className="detail-columns">
+            <div>
+              <h4>能力协商</h4>
+              <div className="capability-matrix">
+                {Object.entries(
+                  selectedPlatform.descriptor.capabilities ?? {},
+                ).map(([name, enabled]) => (
+                  <div key={name}>
+                    <span>{name}</span>
+                    <strong>{String(enabled)}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h4>生命周期日志</h4>
+              <div className="compact-log">
+                {(platformLogs.data ?? []).map((entry) => (
+                  <div key={entry.id}>
+                    <span>{new Date(entry.createdAt).toLocaleString()}</span>
+                    <strong>{entry.action}</strong>
+                    <p>{entry.message}</p>
+                  </div>
+                ))}
+                {!platformLogs.data?.length && (
+                  <div className="empty">暂无日志</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+      {error && <div className="error form-error">{String(error)}</div>}
+    </div>
+  );
+}
+
 function GenericPage({
   id,
   me,
@@ -5821,6 +6646,8 @@ function GenericPage({
       />
       {id === "models" ? (
         <ModelsPanel />
+      ) : id === "runtime-extensions" ? (
+        <RuntimeExtensionsPanel isAdmin={me.user.role === "admin"} />
       ) : id === "bots" ? (
         <BotsPanel />
       ) : id === "channels" ? (

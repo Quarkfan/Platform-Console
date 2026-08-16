@@ -539,6 +539,16 @@ export function buildServer(o: {
         ? request.url.slice(request.url.indexOf("?"))
         : "";
       const upstreamPath = `/${params["*"]}${query}`;
+      if (
+        current.user.role !== "admin" &&
+        mutating.has(request.method) &&
+        /^\/v1\/(?:runtime-providers|extensions)\/[^/]+\/lifecycle\//.test(
+          upstreamPath,
+        )
+      )
+        return reply
+          .code(403)
+          .send({ ok: false, error: { code: "ADMIN_REQUIRED" } });
       try {
         assertConsoleProxyPath(params.center, upstreamPath);
       } catch (error) {
