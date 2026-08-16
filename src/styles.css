@@ -1311,22 +1311,8 @@ progress {
 }
 .health-summary {
   min-width: 0;
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  color: #68756d;
-}
-.health-summary small {
-  min-width: 0;
-  color: #68756d;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.health-summary .health-error {
-  flex-basis: 100%;
-  max-width: 360px;
-  color: #a3312c;
 }
 .detail-facts {
   display: grid;
@@ -1918,9 +1904,6 @@ progress {
   .form-actions > button {
     width: 100%;
   }
-  .health-summary {
-    align-items: flex-start;
-  }
   .assistant-message {
     width: 100%;
   }
@@ -2129,8 +2112,7 @@ html[data-theme="dark"] .page-guide-grid ul,
 html[data-theme="dark"] .guide-intro,
 html[data-theme="dark"] .advanced-description,
 html[data-theme="dark"] .field-help,
-html[data-theme="dark"] .advanced-config summary small,
-html[data-theme="dark"] .health-summary small {
+html[data-theme="dark"] .advanced-config summary small {
   color: #aab6ae;
 }
 html[data-theme="dark"] .action-menu button:hover {

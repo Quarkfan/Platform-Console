@@ -683,17 +683,24 @@ function HealthSummary({
     label: status || "未检测",
     className: "pending",
   };
+  const details = [
+    checkedAt
+      ? `最后检查：${new Date(checkedAt).toLocaleString()}`
+      : "尚未执行健康检查",
+    latencyMs == null ? undefined : `响应延迟：${latencyMs} ms`,
+    error ? `最近错误：${error}` : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
-    <div className="health-summary" title={error || undefined}>
-      <span className={`status-pill ${presentation.className}`}>
+    <div className="health-summary">
+      <span
+        className={`status-pill ${presentation.className}`}
+        title={details}
+        aria-label={`${presentation.label}。${details.replaceAll("\n", "；")}`}
+      >
         {presentation.label}
       </span>
-      <small>
-        {checkedAt
-          ? `最后检查 ${new Date(checkedAt).toLocaleString()}${latencyMs == null ? "" : ` · ${latencyMs} ms`}`
-          : "尚未执行健康检查"}
-      </small>
-      {error && <small className="health-error">{error}</small>}
     </div>
   );
 }

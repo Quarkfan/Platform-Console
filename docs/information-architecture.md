@@ -36,7 +36,7 @@ List views preserve one entity per visual row. Cells do not wrap, wide datasets 
 
 Every React Query mutation drives a global progress strip. Successful operations emit a completion notice; failed operations retain the server message. Clicking a disabled action reports its title or required configuration instead of failing silently.
 
-Entities with a real probe contract expose health independently from enabled/lifecycle state. Lists and details label healthy, degraded, failed, disabled and never-probed states explicitly, show the last persisted check timestamp, include latency where the contract provides it, and surface the latest bounded error. The UI must never infer “healthy” merely from enabled or active state.
+Entities with a real probe contract expose health independently from enabled/lifecycle state. Lists and details keep healthy, degraded, failed, disabled and never-probed labels visible. The last persisted check timestamp, available latency and latest bounded error are secondary details shown in a small hover tooltip and hidden again when the pointer leaves, so they do not widen or clutter the row. The UI must never infer “healthy” merely from enabled or active state.
 
 ## 实现约束
 
