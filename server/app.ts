@@ -133,6 +133,22 @@ export function buildServer(o: {
       }
       return undefined;
     };
+    const firstHeaderValue = (value?: string | string[]) =>
+      Array.isArray(value) ? value[0] : value;
+    const takeFirst = (value?: string) =>
+      typeof value === "string" ? value.split(",")[0]?.trim() : undefined;
+    const headerHost = takeFirst(
+      firstHeaderValue(request.headers["x-forwarded-host"]),
+    );
+    const headerProto = takeFirst(
+      firstHeaderValue(request.headers["x-forwarded-proto"]),
+    );
+    const hostFromForwarded = normalize(
+      headerHost && headerProto
+        ? `${headerProto}://${headerHost}`
+        : undefined,
+    );
+    if (hostFromForwarded) return hostFromForwarded;
     const requestHost =
       typeof request.headers.host === "string"
         ? `${request.protocol}://${request.headers.host}`
