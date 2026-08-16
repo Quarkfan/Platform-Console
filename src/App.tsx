@@ -42,7 +42,6 @@ import { randomUuid } from "./ids";
 type Nav = { id: string; label: string; icon: any };
 const nav: Nav[] = [
   { id: "overview", label: "运行概览", icon: Gauge },
-  { id: "manual", label: "使用手册", icon: BookOpen },
   { id: "assistant", label: "系统助手", icon: CircleHelp },
   { id: "bots", label: "机器人", icon: Bot },
   { id: "channels", label: "通道", icon: Radio },
@@ -70,6 +69,16 @@ const endpoint: Record<string, [string, string]> = {
   resources: ["resource", "/v1/resources"],
   governance: ["governance", "/v1/approvals"],
 };
+function parseObjectJson(value: string, label: string) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error();
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new Error(`${label}必须是有效的 JSON 对象`);
+  }
+}
 type ManualGuide = {
   title: string;
   summary: string;
@@ -544,9 +553,12 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
       ),
     enabled: !!selected,
   });
-  const [draft, setDraft] = useState({
+  const emptyDraft = {
+    id: "",
+    tenantId: "default",
     name: "",
     botId: "",
+    enabled: true,
     scheduleType: "daily",
     time: "08:00",
     weekday: 1,
@@ -554,8 +566,13 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
     cron: "0 8 * * 1-5",
     timezone: "Asia/Shanghai",
     prompt: "",
-  });
-  const create = useMutation({
+    retryMaxAttempts: 2,
+    retryDelaySeconds: 30,
+    misfire: "run-once",
+    maxBackfill: 100,
+  };
+  const [draft, setDraft] = useState(emptyDraft);
+  const save = useMutation({
     mutationFn: () => {
       const schedule =
         draft.scheduleType === "interval"
@@ -565,24 +582,30 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
             : draft.scheduleType === "cron"
               ? { type: "cron", expression: draft.cron }
               : { type: "daily", time: draft.time };
-      return center("scheduler", "/v1/tasks", {
-        method: "POST",
+      return center(
+        "scheduler",
+        draft.id ? `/v1/tasks/${draft.id}` : "/v1/tasks",
+        {
+        method: draft.id ? "PUT" : "POST",
         body: JSON.stringify({
-          tenantId: "default",
+          tenantId: draft.tenantId,
           botId: draft.botId,
           name: draft.name,
-          enabled: true,
+          enabled: draft.enabled,
           schedule,
           timezone: draft.timezone,
           target: { type: "runtime", payload: { prompt: draft.prompt } },
-          retry: { maxAttempts: 2, delaySeconds: 30 },
-          misfire: "run-once",
-          maxBackfill: 100,
+          retry: {
+            maxAttempts: draft.retryMaxAttempts,
+            delaySeconds: draft.retryDelaySeconds,
+          },
+          misfire: draft.misfire,
+          maxBackfill: draft.maxBackfill,
         }),
       });
     },
     onSuccess: () => {
-      setDraft({ ...draft, name: "", prompt: "" });
+      setDraft({ ...emptyDraft });
       refetch();
     },
   });
@@ -592,7 +615,10 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
         method: "POST",
         body: "{}",
       }),
-    onSuccess: refetch,
+    onSuccess: () => {
+      if (draft.id) setDraft({ ...emptyDraft });
+      refetch();
+    },
   });
   const toggle = useMutation({
     mutationFn: (task: any) =>
@@ -664,9 +690,45 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
               <History size={16} />
             </button>
             <button
+              className="icon-button"
+              title={
+                x.target?.type === "runtime" && x.schedule?.type !== "once"
+                  ? "编辑任务"
+                  : "该系统任务不支持在此编辑"
+              }
+              disabled={
+                x.target?.type !== "runtime" || x.schedule?.type === "once"
+              }
+              onClick={() =>
+                setDraft({
+                  id: x.id,
+                  tenantId: x.tenantId,
+                  name: x.name,
+                  botId: x.botId,
+                  enabled: x.enabled,
+                  scheduleType: x.schedule.type,
+                  time: x.schedule.time ?? "08:00",
+                  weekday: x.schedule.weekday ?? 1,
+                  intervalSeconds: x.schedule.seconds ?? 3600,
+                  cron: x.schedule.expression ?? "0 8 * * 1-5",
+                  timezone: x.timezone,
+                  prompt: String(x.target.payload?.prompt ?? ""),
+                  retryMaxAttempts: x.retry?.maxAttempts ?? 2,
+                  retryDelaySeconds: x.retry?.delaySeconds ?? 30,
+                  misfire: x.misfire ?? "run-once",
+                  maxBackfill: x.maxBackfill ?? 100,
+                })
+              }
+            >
+              <Settings size={16} />
+            </button>
+            <button
               className="icon-button danger-button"
               title="删除任务"
-              onClick={() => remove.mutate(x)}
+              onClick={() => {
+                if (window.confirm(`确认删除调度任务“${x.name}”？`))
+                  remove.mutate(x);
+              }}
             >
               <Trash2 size={16} />
             </button>
@@ -675,7 +737,15 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
       </div>
       <section className="section-band schedule-create">
         <div className="section-title">
-          <h3>新建调度任务</h3>
+          <h3>{draft.id ? "编辑调度任务" : "新建调度任务"}</h3>
+          {draft.id && (
+            <button
+              className="secondary compact-button"
+              onClick={() => setDraft({ ...emptyDraft })}
+            >
+              取消编辑
+            </button>
+          )}
         </div>
         <div className="schedule-form">
           <label>
@@ -765,6 +835,78 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
               onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
             />
           </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(event) =>
+                setDraft({ ...draft, enabled: event.target.checked })
+              }
+            />
+            启用
+          </label>
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label>
+                重试次数
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={draft.retryMaxAttempts}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      retryMaxAttempts: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                重试延迟秒数
+                <input
+                  type="number"
+                  min={1}
+                  value={draft.retryDelaySeconds}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      retryDelaySeconds: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                错过执行策略
+                <select
+                  value={draft.misfire}
+                  onChange={(event) =>
+                    setDraft({ ...draft, misfire: event.target.value })
+                  }
+                >
+                  <option value="skip">跳过</option>
+                  <option value="run-once">补跑一次</option>
+                  <option value="catch-up">追赶执行</option>
+                </select>
+              </label>
+              <label>
+                最大追赶数量
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={draft.maxBackfill}
+                  onChange={(event) =>
+                    setDraft({ ...draft, maxBackfill: Number(event.target.value) })
+                  }
+                />
+              </label>
+            </div>
+          </details>
           <label className="wide-field">
             Prompt
             <textarea
@@ -776,16 +918,16 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
           <button
             className="primary"
             disabled={
-              !draft.name || !draft.botId || !draft.prompt || create.isPending
+              !draft.name || !draft.botId || !draft.prompt || save.isPending
             }
-            onClick={() => create.mutate()}
+            onClick={() => save.mutate()}
           >
             <CalendarClock size={16} />
-            保存任务
+            {draft.id ? "保存修改" : "保存任务"}
           </button>
         </div>
-        {create.error && (
-          <div className="error form-error">{String(create.error)}</div>
+        {save.error && (
+          <div className="error form-error">{String(save.error)}</div>
         )}
       </section>
       {selected && (
@@ -994,6 +1136,449 @@ function BrowserPanel() {
     </div>
   );
 }
+function ContextPanel() {
+  const client = useQueryClient();
+  const sources = useQuery({
+    queryKey: ["context-sources"],
+    queryFn: () => center<any[]>("ch", "/v1/sources"),
+  });
+  const bindings = useQuery({
+    queryKey: ["context-bindings"],
+    queryFn: () => center<any[]>("ch", "/v1/bindings"),
+  });
+  const bots = useQuery({
+    queryKey: ["bots"],
+    queryFn: () => center<any[]>("runtime", "/v1/bots"),
+  });
+  const emptySource = {
+    id: "",
+    name: "",
+    kind: "manual",
+    enabled: true,
+    freshnessTtlSeconds: 86400,
+    scopeBotIds: "",
+    scopeWorkspaceIds: "",
+    configJson: "{}",
+  };
+  const emptyBinding = {
+    id: "",
+    sourceId: "",
+    botId: "",
+    enabled: true,
+    priority: 100,
+    maxAgeSeconds: 86400,
+    tags: "",
+  };
+  const [source, setSource] = useState(emptySource);
+  const [binding, setBinding] = useState(emptyBinding);
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: ["context-sources"] });
+    void client.invalidateQueries({ queryKey: ["context-bindings"] });
+  };
+  const saveSource = useMutation({
+    mutationFn: () =>
+      center(
+        "ch",
+        source.id ? `/v1/sources/${source.id}` : "/v1/sources",
+        {
+          method: source.id ? "PUT" : "POST",
+          body: JSON.stringify({
+            name: source.name,
+            kind: source.kind,
+            enabled: source.enabled,
+            scope: {
+              tenantId: "default",
+              botIds: source.scopeBotIds.split(/[,，\s]+/).filter(Boolean),
+              workspaceIds: source.scopeWorkspaceIds
+                .split(/[,，\s]+/)
+                .filter(Boolean),
+            },
+            config: parseObjectJson(source.configJson, "来源配置"),
+            freshnessTtlSeconds: source.freshnessTtlSeconds,
+          }),
+        },
+      ),
+    onSuccess: () => {
+      setSource({ ...emptySource });
+      refresh();
+    },
+  });
+  const removeSource = useMutation({
+    mutationFn: (item: any) =>
+      center("ch", `/v1/sources/${item.id}`, { method: "DELETE" }),
+    onSuccess: (_result, item) => {
+      if (source.id === item.id) setSource({ ...emptySource });
+      refresh();
+    },
+  });
+  const saveBinding = useMutation({
+    mutationFn: () =>
+      center(
+        "ch",
+        binding.id ? `/v1/bindings/${binding.id}` : "/v1/bindings",
+        {
+          method: binding.id ? "PUT" : "POST",
+          body: JSON.stringify({
+            sourceId: binding.sourceId,
+            botId: binding.botId,
+            enabled: binding.enabled,
+            priority: binding.priority,
+            maxAgeSeconds: binding.maxAgeSeconds,
+            tags: binding.tags.split(/[,，\s]+/).filter(Boolean),
+          }),
+        },
+      ),
+    onSuccess: () => {
+      setBinding({ ...emptyBinding });
+      refresh();
+    },
+  });
+  const removeBinding = useMutation({
+    mutationFn: (item: any) =>
+      center("ch", `/v1/bindings/${item.id}`, { method: "DELETE" }),
+    onSuccess: (_result, item) => {
+      if (binding.id === item.id) setBinding({ ...emptyBinding });
+      refresh();
+    },
+  });
+  const error =
+    saveSource.error ??
+    removeSource.error ??
+    saveBinding.error ??
+    removeBinding.error;
+  return (
+    <div className="stack">
+      <section className="section-band">
+        <div className="section-title">
+          <h3>上下文来源</h3>
+          <span>{sources.data?.length ?? 0} 个</span>
+        </div>
+        <div className="model-entity-list">
+          {(sources.data ?? []).map((item) => {
+            const managed = item.config?.managedType === "runtime-transcript";
+            return (
+              <div className="model-entity-row" key={item.id}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>
+                    {item.kind} · {managed ? "系统托管" : item.status}
+                  </span>
+                </div>
+                <code>
+                  {item.lastIngestedAt
+                    ? `最近入库 ${item.lastIngestedAt}`
+                    : "尚未入库"}
+                </code>
+                <div className="row-actions">
+                  <button
+                    className="icon-button"
+                    title={managed ? "系统托管来源不可编辑" : "编辑来源"}
+                    disabled={managed}
+                    onClick={() =>
+                      setSource({
+                        id: item.id,
+                        name: item.name,
+                        kind: item.kind,
+                        enabled: item.enabled,
+                        freshnessTtlSeconds:
+                          item.freshnessTtlSeconds ?? 86400,
+                        scopeBotIds: (item.scope?.botIds ?? []).join(", "),
+                        scopeWorkspaceIds: (item.scope?.workspaceIds ?? []).join(", "),
+                        configJson: JSON.stringify(item.config ?? {}, null, 2),
+                      })
+                    }
+                  >
+                    <Settings size={16} />
+                  </button>
+                  <button
+                    className="icon-button danger-button"
+                    title={managed ? "系统托管来源不可删除" : "删除来源"}
+                    disabled={managed}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `确认删除上下文来源“${item.name}”及其记录？`,
+                        )
+                      )
+                        removeSource.mutate(item);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="editor-heading">
+          <strong>{source.id ? "编辑上下文来源" : "新增上下文来源"}</strong>
+          {source.id && (
+            <button
+              className="secondary compact-button"
+              onClick={() => setSource({ ...emptySource })}
+            >
+              取消编辑
+            </button>
+          )}
+        </div>
+        <div className="context-form">
+          <input
+            aria-label="来源名称"
+            placeholder="来源名称"
+            value={source.name}
+            onChange={(event) =>
+              setSource({ ...source, name: event.target.value })
+            }
+          />
+          <select
+            aria-label="来源类型"
+            value={source.kind}
+            onChange={(event) =>
+              setSource({ ...source, kind: event.target.value })
+            }
+          >
+            <option value="manual">人工维护</option>
+            <option value="file">文件</option>
+            <option value="url">网页</option>
+            <option value="lark-document">飞书文档</option>
+            <option value="lark-wiki">飞书知识库</option>
+            <option value="skill-knowledge">Skill 知识</option>
+            <option value="external">外部系统</option>
+          </select>
+          <label>
+            新鲜度 TTL（秒）
+            <input
+              type="number"
+              min={1}
+              value={source.freshnessTtlSeconds}
+              onChange={(event) =>
+                setSource({
+                  ...source,
+                  freshnessTtlSeconds: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={source.enabled}
+              onChange={(event) =>
+                setSource({ ...source, enabled: event.target.checked })
+              }
+            />
+            启用
+          </label>
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label>
+                限定机器人 ID
+                <input
+                  placeholder="多个值用逗号分隔"
+                  value={source.scopeBotIds}
+                  onChange={(event) =>
+                    setSource({ ...source, scopeBotIds: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                限定工作空间 ID
+                <input
+                  placeholder="多个值用逗号分隔"
+                  value={source.scopeWorkspaceIds}
+                  onChange={(event) =>
+                    setSource({ ...source, scopeWorkspaceIds: event.target.value })
+                  }
+                />
+              </label>
+              <label className="wide-field">
+                来源配置（JSON）
+                <textarea
+                  rows={4}
+                  spellCheck={false}
+                  value={source.configJson}
+                  onChange={(event) =>
+                    setSource({ ...source, configJson: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </details>
+          <button
+            className="primary"
+            disabled={!source.name || saveSource.isPending}
+            onClick={() => saveSource.mutate()}
+          >
+            {source.id ? "保存修改" : "添加来源"}
+          </button>
+        </div>
+      </section>
+      <section className="section-band">
+        <div className="section-title">
+          <h3>机器人绑定</h3>
+          <span>{bindings.data?.length ?? 0} 个</span>
+        </div>
+        <div className="model-entity-list">
+          {(bindings.data ?? []).map((item) => (
+            <div className="model-entity-row" key={item.id}>
+              <div>
+                <strong>
+                  {(sources.data ?? []).find(
+                    (entry) => entry.id === item.sourceId,
+                  )?.name ?? item.sourceId}
+                </strong>
+                <span>
+                  {(bots.data ?? []).find((entry) => entry.id === item.botId)
+                    ?.name ?? item.botId} · 优先级 {item.priority}
+                </span>
+              </div>
+              <code>{item.enabled ? "已启用" : "已停用"}</code>
+              <div className="row-actions">
+                <button
+                  className="icon-button"
+                  title="编辑绑定"
+                  onClick={() =>
+                    setBinding({
+                      id: item.id,
+                      sourceId: item.sourceId,
+                      botId: item.botId,
+                      enabled: item.enabled,
+                      priority: item.priority,
+                      maxAgeSeconds: item.maxAgeSeconds ?? 86400,
+                      tags: (item.tags ?? []).join(", "),
+                    })
+                  }
+                >
+                  <Settings size={16} />
+                </button>
+                <button
+                  className="icon-button danger-button"
+                  title="删除绑定"
+                  onClick={() => {
+                    if (window.confirm("确认解除这个上下文绑定？"))
+                      removeBinding.mutate(item);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="editor-heading">
+          <strong>{binding.id ? "编辑机器人绑定" : "新增机器人绑定"}</strong>
+          {binding.id && (
+            <button
+              className="secondary compact-button"
+              onClick={() => setBinding({ ...emptyBinding })}
+            >
+              取消编辑
+            </button>
+          )}
+        </div>
+        <div className="context-form">
+          <select
+            aria-label="绑定来源"
+            value={binding.sourceId}
+            onChange={(event) =>
+              setBinding({ ...binding, sourceId: event.target.value })
+            }
+          >
+            <option value="">选择来源</option>
+            {(sources.data ?? []).map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="绑定机器人"
+            value={binding.botId}
+            onChange={(event) =>
+              setBinding({ ...binding, botId: event.target.value })
+            }
+          >
+            <option value="">选择机器人</option>
+            {(bots.data ?? []).map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <label>
+            优先级
+            <input
+              type="number"
+              value={binding.priority}
+              onChange={(event) =>
+                setBinding({
+                  ...binding,
+                  priority: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label>
+            最大年龄（秒）
+            <input
+              type="number"
+              min={1}
+              value={binding.maxAgeSeconds}
+              onChange={(event) =>
+                setBinding({
+                  ...binding,
+                  maxAgeSeconds: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={binding.enabled}
+              onChange={(event) =>
+                setBinding({ ...binding, enabled: event.target.checked })
+              }
+            />
+            启用
+          </label>
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label className="wide-field">
+                标签
+                <input
+                  placeholder="多个值用逗号分隔"
+                  value={binding.tags}
+                  onChange={(event) =>
+                    setBinding({ ...binding, tags: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </details>
+          <button
+            className="primary"
+            disabled={
+              !binding.sourceId || !binding.botId || saveBinding.isPending
+            }
+            onClick={() => saveBinding.mutate()}
+          >
+            {binding.id ? "保存修改" : "添加绑定"}
+          </button>
+        </div>
+        {error && <div className="error form-error">{String(error)}</div>}
+      </section>
+    </div>
+  );
+}
 function ModelsPanel() {
   const client = useQueryClient();
   const providers = useQuery({
@@ -1008,83 +1593,215 @@ function ModelsPanel() {
     queryKey: ["model-policies"],
     queryFn: () => center<any[]>("mh", "/v1/routing-policies"),
   });
-  const [provider, setProvider] = useState({
+  const bots = useQuery({
+    queryKey: ["bots"],
+    queryFn: () => center<any[]>("runtime", "/v1/bots"),
+  });
+  const emptyProvider = {
+    id: "",
     name: "",
     protocol: "openai",
     baseUrl: "",
     apiKey: "",
-  });
-  const [deployment, setDeployment] = useState({
+    credentialRef: "",
+    enabled: true,
+    priority: 100,
+    weight: 1,
+    headersJson: "{}",
+  };
+  const emptyDeployment = {
+    id: "",
     providerId: "",
     modelId: "",
     name: "",
     kind: "chat",
-  });
-  const [policy, setPolicy] = useState({
+    enabled: true,
+    capabilities: "",
+    contextWindow: "",
+    inputPricePerMillion: "",
+    outputPricePerMillion: "",
+    metadataJson: "{}",
+  };
+  const emptyPolicy = {
+    id: "",
     name: "",
     mode: "round-robin",
+    fixedDeploymentId: "",
     failoverOnFailure: true,
+    maxAttempts: 3,
+    enabled: true,
     deploymentIds: [] as string[],
-  });
-  const addProvider = useMutation({
+  };
+  const [provider, setProvider] = useState(emptyProvider);
+  const [deployment, setDeployment] = useState(emptyDeployment);
+  const [policy, setPolicy] = useState(emptyPolicy);
+  const invalidateModels = () => {
+    void client.invalidateQueries({ queryKey: ["model-providers"] });
+    void client.invalidateQueries({ queryKey: ["model-deployments"] });
+    void client.invalidateQueries({ queryKey: ["model-policies"] });
+  };
+  const saveProvider = useMutation({
     mutationFn: async () => {
-      let credentialRef: string | undefined;
+      let credentialRef = provider.credentialRef || undefined;
       if (provider.apiKey) {
-        const credential = await center<any>("governance", "/v1/credentials", {
-          method: "POST",
-          body: JSON.stringify({
-            tenantId: "default",
-            name: `${provider.name} API Key`,
-            kind: "model-provider",
-            value: { apiKey: provider.apiKey },
-          }),
-        });
-        credentialRef = `governance:default:${credential.id}`;
+        const existing = credentialRef?.match(
+          /^governance:default:([0-9a-f-]{36})$/i,
+        )?.[1];
+        if (existing) {
+          await center("governance", `/v1/credentials/${existing}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              tenantId: "default",
+              actorId: "platform-console",
+              value: { apiKey: provider.apiKey },
+              name: `${provider.name} API Key`,
+              kind: "model-provider",
+              correlationId: randomUuid(),
+            }),
+          });
+        } else {
+          const credential = await center<any>(
+            "governance",
+            "/v1/credentials",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                tenantId: "default",
+                name: `${provider.name} API Key`,
+                kind: "model-provider",
+                value: { apiKey: provider.apiKey },
+              }),
+            },
+          );
+          credentialRef = `governance:default:${credential.id}`;
+        }
       }
-      return center("mh", "/v1/providers", {
-        method: "POST",
-        body: JSON.stringify({
-          ...provider,
-          apiKey: undefined,
-          credentialRef,
-        }),
-      });
+      const body = {
+        name: provider.name,
+        protocol: provider.protocol,
+        baseUrl: provider.baseUrl,
+        credentialRef,
+        enabled: provider.enabled,
+        priority: provider.priority,
+        weight: provider.weight,
+        headers: parseObjectJson(provider.headersJson, "自定义请求头"),
+      };
+      return center(
+        "mh",
+        provider.id ? `/v1/providers/${provider.id}` : "/v1/providers",
+        { method: provider.id ? "PUT" : "POST", body: JSON.stringify(body) },
+      );
     },
     onSuccess: () => {
-      setProvider({
-        name: "",
-        protocol: "openai",
-        baseUrl: "",
-        apiKey: "",
-      });
-      void client.invalidateQueries({ queryKey: ["model-providers"] });
+      setProvider({ ...emptyProvider });
+      invalidateModels();
     },
   });
-  const addPolicy = useMutation({
-    mutationFn: () =>
-      center("mh", "/v1/routing-policies", {
-        method: "POST",
-        body: JSON.stringify({ ...policy, maxAttempts: 3 }),
-      }),
-    onSuccess: () =>
-      void client.invalidateQueries({ queryKey: ["model-policies"] }),
-  });
-  const addDeployment = useMutation({
-    mutationFn: () =>
-      center("mh", "/v1/models", {
-        method: "POST",
-        body: JSON.stringify(deployment),
-      }),
+  const saveDeployment = useMutation({
+    mutationFn: () => {
+      const body = {
+        providerId: deployment.providerId,
+        modelId: deployment.modelId,
+        name: deployment.name,
+        kind: deployment.kind,
+        enabled: deployment.enabled,
+        capabilities: deployment.capabilities
+          .split(/[,，\s]+/)
+          .filter(Boolean),
+        contextWindow: deployment.contextWindow
+          ? Number(deployment.contextWindow)
+          : undefined,
+        inputPricePerMillion: deployment.inputPricePerMillion
+          ? Number(deployment.inputPricePerMillion)
+          : undefined,
+        outputPricePerMillion: deployment.outputPricePerMillion
+          ? Number(deployment.outputPricePerMillion)
+          : undefined,
+        metadata: parseObjectJson(deployment.metadataJson, "模型元数据"),
+      };
+      return center(
+        "mh",
+        deployment.id ? `/v1/models/${deployment.id}` : "/v1/models",
+        {
+          method: deployment.id ? "PUT" : "POST",
+          body: JSON.stringify(body),
+        },
+      );
+    },
     onSuccess: () => {
-      setDeployment({
-        providerId: "",
-        modelId: "",
-        name: "",
-        kind: "chat",
-      });
-      void client.invalidateQueries({ queryKey: ["model-deployments"] });
+      setDeployment({ ...emptyDeployment });
+      invalidateModels();
     },
   });
+  const savePolicy = useMutation({
+    mutationFn: () => {
+      const body = {
+        name: policy.name,
+        mode: policy.mode,
+        deploymentIds: policy.deploymentIds,
+        fixedDeploymentId:
+          policy.mode === "fixed"
+            ? policy.fixedDeploymentId || policy.deploymentIds[0]
+            : undefined,
+        failoverOnFailure: policy.failoverOnFailure,
+        maxAttempts: policy.maxAttempts,
+        enabled: policy.enabled,
+      };
+      return center(
+        "mh",
+        policy.id
+          ? `/v1/routing-policies/${policy.id}`
+          : "/v1/routing-policies",
+        { method: policy.id ? "PUT" : "POST", body: JSON.stringify(body) },
+      );
+    },
+    onSuccess: () => {
+      setPolicy({ ...emptyPolicy, deploymentIds: [] });
+      invalidateModels();
+    },
+  });
+  const probeProvider = useMutation({
+    mutationFn: (id: string) =>
+      center("mh", `/v1/providers/${id}/probe`, {
+        method: "POST",
+        body: "{}",
+      }),
+    onSuccess: invalidateModels,
+  });
+  const removeEntity = useMutation({
+    mutationFn: ({ type, id }: { type: "provider" | "model" | "policy"; id: string }) =>
+      center(
+        "mh",
+        type === "provider"
+          ? `/v1/providers/${id}`
+          : type === "model"
+            ? `/v1/models/${id}`
+            : `/v1/routing-policies/${id}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: invalidateModels,
+  });
+  const remove = (
+    type: "provider" | "model" | "policy",
+    item: any,
+    label: string,
+  ) => {
+    if (
+      type === "policy" &&
+      (bots.data ?? []).some((bot) => bot.modelPolicyId === item.id)
+    ) {
+      window.alert("该策略仍被机器人使用，请先修改对应机器人的模型策略。");
+      return;
+    }
+    if (window.confirm(`确认删除“${label}”？有关联配置时系统会阻止删除。`))
+      removeEntity.mutate({ type, id: item.id });
+  };
+  const modelError =
+    saveProvider.error ??
+    saveDeployment.error ??
+    savePolicy.error ??
+    probeProvider.error ??
+    removeEntity.error;
   return (
     <div className="stack">
       <section className="section-band">
@@ -1092,17 +1809,83 @@ function ModelsPanel() {
           <h3>Model Provider</h3>
           <span>{providers.data?.length ?? 0} 个</span>
         </div>
-        <DataTable items={providers.data ?? []} />
-        <div className="inline-form">
+        <div className="model-entity-list">
+          {(providers.data ?? []).map((item) => (
+            <div className="model-entity-row" key={item.id}>
+              <div>
+                <strong>{item.name}</strong>
+                <span>
+                  {item.protocol} · {item.enabled ? item.status : "已停用"}
+                </span>
+              </div>
+              <code>{item.baseUrl}</code>
+              <div className="row-actions">
+                <button
+                  className="icon-button"
+                  title="检测 Provider"
+                  onClick={() => probeProvider.mutate(item.id)}
+                >
+                  <Activity size={16} />
+                </button>
+                <button
+                  className="icon-button"
+                  title="编辑 Provider"
+                  onClick={() =>
+                    setProvider({
+                      id: item.id,
+                      name: item.name,
+                      protocol: item.protocol,
+                      baseUrl: item.baseUrl,
+                      apiKey: "",
+                      credentialRef: item.credentialRef ?? "",
+                      enabled: item.enabled,
+                      priority: item.priority,
+                      weight: item.weight,
+                      headersJson: JSON.stringify(item.headers ?? {}, null, 2),
+                    })
+                  }
+                >
+                  <Settings size={16} />
+                </button>
+                <button
+                  className="icon-button danger-button"
+                  title="删除 Provider"
+                  onClick={() => remove("provider", item, item.name)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {!providers.isLoading && !(providers.data ?? []).length && (
+            <div className="empty">暂无 Provider</div>
+          )}
+        </div>
+        <div className="editor-heading">
+          <strong>{provider.id ? "编辑 Provider" : "新增 Provider"}</strong>
+          {provider.id && (
+            <button
+              className="secondary compact-button"
+              onClick={() => setProvider({ ...emptyProvider })}
+            >
+              取消编辑
+            </button>
+          )}
+        </div>
+        <div className="model-provider-form">
           <input
+            aria-label="Provider 名称"
             placeholder="名称"
             value={provider.name}
-            onChange={(e) => setProvider({ ...provider, name: e.target.value })}
+            onChange={(event) =>
+              setProvider({ ...provider, name: event.target.value })
+            }
           />
           <select
+            aria-label="Provider 协议"
             value={provider.protocol}
-            onChange={(e) =>
-              setProvider({ ...provider, protocol: e.target.value })
+            onChange={(event) =>
+              setProvider({ ...provider, protocol: event.target.value })
             }
           >
             <option value="openai">OpenAI compatible</option>
@@ -1112,26 +1895,82 @@ function ModelsPanel() {
             <option value="custom-http">Custom HTTP</option>
           </select>
           <input
+            aria-label="Provider Base URL"
             placeholder="Base URL"
             value={provider.baseUrl}
-            onChange={(e) =>
-              setProvider({ ...provider, baseUrl: e.target.value })
+            onChange={(event) =>
+              setProvider({ ...provider, baseUrl: event.target.value })
             }
           />
           <input
-            placeholder="API Key（加密保存）"
+            aria-label="Provider API Key"
+            placeholder={
+              provider.id ? "API Key（留空则保持不变）" : "API Key（加密保存）"
+            }
             type="password"
             value={provider.apiKey}
-            onChange={(e) =>
-              setProvider({ ...provider, apiKey: e.target.value })
+            onChange={(event) =>
+              setProvider({ ...provider, apiKey: event.target.value })
             }
           />
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={provider.enabled}
+              onChange={(event) =>
+                setProvider({ ...provider, enabled: event.target.checked })
+              }
+            />
+            启用
+          </label>
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label>
+                调度优先级
+                <input
+                  type="number"
+                  value={provider.priority}
+                  onChange={(event) =>
+                    setProvider({ ...provider, priority: Number(event.target.value) })
+                  }
+                />
+              </label>
+              <label>
+                权重
+                <input
+                  type="number"
+                  min={1}
+                  value={provider.weight}
+                  onChange={(event) =>
+                    setProvider({ ...provider, weight: Number(event.target.value) })
+                  }
+                />
+              </label>
+              <label className="wide-field">
+                自定义请求头（JSON）
+                <textarea
+                  rows={4}
+                  spellCheck={false}
+                  value={provider.headersJson}
+                  onChange={(event) =>
+                    setProvider({ ...provider, headersJson: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </details>
           <button
             className="primary"
-            onClick={() => addProvider.mutate()}
-            disabled={!provider.name || !provider.baseUrl}
+            onClick={() => saveProvider.mutate()}
+            disabled={
+              !provider.name || !provider.baseUrl || saveProvider.isPending
+            }
           >
-            添加
+            {provider.id ? "保存修改" : "添加 Provider"}
           </button>
         </div>
       </section>
@@ -1140,16 +1979,80 @@ function ModelsPanel() {
           <h3>模型部署</h3>
           <span>{deployments.data?.length ?? 0} 个</span>
         </div>
-        <DataTable items={deployments.data ?? []} />
+        <div className="model-entity-list">
+          {(deployments.data ?? []).map((item) => (
+            <div className="model-entity-row" key={item.id}>
+              <div>
+                <strong>{item.name}</strong>
+                <span>
+                  {item.modelId} · {item.kind} · {item.enabled ? "已启用" : "已停用"}
+                </span>
+              </div>
+              <code>
+                {(providers.data ?? []).find((entry) => entry.id === item.providerId)
+                  ?.name ?? item.providerId}
+              </code>
+              <div className="row-actions">
+                <button
+                  className="icon-button"
+                  title="编辑模型"
+                  onClick={() =>
+                    setDeployment({
+                      id: item.id,
+                      providerId: item.providerId,
+                      modelId: item.modelId,
+                      name: item.name,
+                      kind: item.kind,
+                      enabled: item.enabled,
+                      capabilities: (item.capabilities ?? []).join(", "),
+                      contextWindow: item.contextWindow
+                        ? String(item.contextWindow)
+                        : "",
+                      inputPricePerMillion:
+                        item.inputPricePerMillion == null
+                          ? ""
+                          : String(item.inputPricePerMillion),
+                      outputPricePerMillion:
+                        item.outputPricePerMillion == null
+                          ? ""
+                          : String(item.outputPricePerMillion),
+                      metadataJson: JSON.stringify(item.metadata ?? {}, null, 2),
+                    })
+                  }
+                >
+                  <Settings size={16} />
+                </button>
+                <button
+                  className="icon-button danger-button"
+                  title="删除模型"
+                  onClick={() => remove("model", item, item.name)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {!deployments.isLoading && !(deployments.data ?? []).length && (
+            <div className="empty">暂无模型部署</div>
+          )}
+        </div>
+        <div className="editor-heading">
+          <strong>{deployment.id ? "编辑模型部署" : "新增模型部署"}</strong>
+          {deployment.id && (
+            <button
+              className="secondary compact-button"
+              onClick={() => setDeployment({ ...emptyDeployment })}
+            >
+              取消编辑
+            </button>
+          )}
+        </div>
         <div className="model-form">
           <select
             aria-label="模型所属 Provider"
             value={deployment.providerId}
             onChange={(event) =>
-              setDeployment({
-                ...deployment,
-                providerId: event.target.value,
-              })
+              setDeployment({ ...deployment, providerId: event.target.value })
             }
           >
             <option value="">选择 Provider</option>
@@ -1193,38 +2096,168 @@ function ModelsPanel() {
             <option value="text-to-speech">文字转语音</option>
             <option value="video-generation">视频生成</option>
           </select>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={deployment.enabled}
+              onChange={(event) =>
+                setDeployment({ ...deployment, enabled: event.target.checked })
+              }
+            />
+            启用
+          </label>
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label>
+                能力标签
+                <input
+                  placeholder="tools, vision"
+                  value={deployment.capabilities}
+                  onChange={(event) =>
+                    setDeployment({ ...deployment, capabilities: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                上下文窗口
+                <input
+                  type="number"
+                  min={1}
+                  value={deployment.contextWindow}
+                  onChange={(event) =>
+                    setDeployment({ ...deployment, contextWindow: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                输入价格 / 百万 Token
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={deployment.inputPricePerMillion}
+                  onChange={(event) =>
+                    setDeployment({ ...deployment, inputPricePerMillion: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                输出价格 / 百万 Token
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={deployment.outputPricePerMillion}
+                  onChange={(event) =>
+                    setDeployment({ ...deployment, outputPricePerMillion: event.target.value })
+                  }
+                />
+              </label>
+              <label className="wide-field">
+                元数据（JSON）
+                <textarea
+                  rows={4}
+                  spellCheck={false}
+                  value={deployment.metadataJson}
+                  onChange={(event) =>
+                    setDeployment({ ...deployment, metadataJson: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </details>
           <button
             className="primary"
-            onClick={() => addDeployment.mutate()}
+            onClick={() => saveDeployment.mutate()}
             disabled={
               !deployment.providerId ||
               !deployment.modelId ||
               !deployment.name ||
-              addDeployment.isPending
+              saveDeployment.isPending
             }
           >
-            添加部署
+            {deployment.id ? "保存修改" : "添加模型"}
           </button>
         </div>
-        {addDeployment.error && (
-          <div className="error form-error">{String(addDeployment.error)}</div>
-        )}
       </section>
       <section className="section-band">
         <div className="section-title">
           <h3>使用策略</h3>
-          <span>固定 / 轮流 / 随机</span>
+          <span>{policies.data?.length ?? 0} 个</span>
         </div>
-        <DataTable items={policies.data ?? []} />
+        <div className="model-entity-list">
+          {(policies.data ?? []).map((item) => (
+            <div className="model-entity-row" key={item.id}>
+              <div>
+                <strong>{item.name}</strong>
+                <span>
+                  {item.mode} · {item.deploymentIds.length} 个模型 · {item.enabled ? "已启用" : "已停用"}
+                </span>
+              </div>
+              <code>{item.failoverOnFailure ? "失败切换" : "单次尝试"}</code>
+              <div className="row-actions">
+                <button
+                  className="icon-button"
+                  title="编辑策略"
+                  onClick={() =>
+                    setPolicy({
+                      id: item.id,
+                      name: item.name,
+                      mode: item.mode,
+                      fixedDeploymentId: item.fixedDeploymentId ?? "",
+                      failoverOnFailure: item.failoverOnFailure,
+                      maxAttempts: item.maxAttempts,
+                      enabled: item.enabled,
+                      deploymentIds: [...item.deploymentIds],
+                    })
+                  }
+                >
+                  <Settings size={16} />
+                </button>
+                <button
+                  className="icon-button danger-button"
+                  title="删除策略"
+                  onClick={() => remove("policy", item, item.name)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {!policies.isLoading && !(policies.data ?? []).length && (
+            <div className="empty">暂无使用策略</div>
+          )}
+        </div>
+        <div className="editor-heading">
+          <strong>{policy.id ? "编辑使用策略" : "新增使用策略"}</strong>
+          {policy.id && (
+            <button
+              className="secondary compact-button"
+              onClick={() => setPolicy({ ...emptyPolicy, deploymentIds: [] })}
+            >
+              取消编辑
+            </button>
+          )}
+        </div>
         <div className="policy-form">
           <input
+            aria-label="策略名称"
             placeholder="策略名称"
             value={policy.name}
-            onChange={(e) => setPolicy({ ...policy, name: e.target.value })}
+            onChange={(event) =>
+              setPolicy({ ...policy, name: event.target.value })
+            }
           />
           <select
+            aria-label="策略模式"
             value={policy.mode}
-            onChange={(e) => setPolicy({ ...policy, mode: e.target.value })}
+            onChange={(event) =>
+              setPolicy({ ...policy, mode: event.target.value })
+            }
           >
             <option value="fixed">固定</option>
             <option value="round-robin">轮流</option>
@@ -1234,11 +2267,39 @@ function ModelsPanel() {
             <input
               type="checkbox"
               checked={policy.failoverOnFailure}
-              onChange={(e) =>
-                setPolicy({ ...policy, failoverOnFailure: e.target.checked })
+              onChange={(event) =>
+                setPolicy({
+                  ...policy,
+                  failoverOnFailure: event.target.checked,
+                })
               }
             />
             失败时切换下一个
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={policy.enabled}
+              onChange={(event) =>
+                setPolicy({ ...policy, enabled: event.target.checked })
+              }
+            />
+            启用
+          </label>
+          <label>
+            最大尝试次数
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={policy.maxAttempts}
+              onChange={(event) =>
+                setPolicy({
+                  ...policy,
+                  maxAttempts: Number(event.target.value),
+                })
+              }
+            />
           </label>
           <div className="deployment-options">
             {(deployments.data ?? []).map((item) => (
@@ -1246,10 +2307,10 @@ function ModelsPanel() {
                 <input
                   type="checkbox"
                   checked={policy.deploymentIds.includes(item.id)}
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setPolicy({
                       ...policy,
-                      deploymentIds: e.target.checked
+                      deploymentIds: event.target.checked
                         ? [...policy.deploymentIds, item.id]
                         : policy.deploymentIds.filter((id) => id !== item.id),
                     })
@@ -1259,14 +2320,42 @@ function ModelsPanel() {
               </label>
             ))}
           </div>
+          {policy.mode === "fixed" && (
+            <select
+              aria-label="固定模型"
+              value={policy.fixedDeploymentId}
+              onChange={(event) =>
+                setPolicy({
+                  ...policy,
+                  fixedDeploymentId: event.target.value,
+                })
+              }
+            >
+              <option value="">使用第一个已选模型</option>
+              {(deployments.data ?? [])
+                .filter((item) => policy.deploymentIds.includes(item.id))
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </select>
+          )}
           <button
             className="primary"
-            onClick={() => addPolicy.mutate()}
-            disabled={!policy.name || !policy.deploymentIds.length}
+            onClick={() => savePolicy.mutate()}
+            disabled={
+              !policy.name ||
+              !policy.deploymentIds.length ||
+              savePolicy.isPending
+            }
           >
-            保存策略
+            {policy.id ? "保存修改" : "添加策略"}
           </button>
         </div>
+        {modelError && (
+          <div className="error form-error">{String(modelError)}</div>
+        )}
       </section>
     </div>
   );
@@ -1285,43 +2374,87 @@ function ChannelsPanel() {
     queryKey: ["channel-types"],
     queryFn: () => center<any[]>("mg", "/v1/channel-types"),
   });
-  const [draft, setDraft] = useState({
+  const routes = useQuery({
+    queryKey: ["routes"],
+    queryFn: () => center<any[]>("mg", "/v1/routes"),
+  });
+  const emptyDraft = {
+    id: "",
     name: "",
     botId: "",
     appId: "",
     appSecret: "",
     verificationToken: "",
     encryptKey: "",
+    credentialRef: "",
+    config: {} as Record<string, any>,
+    configJson: "{}",
+    enabled: true,
     transport: "long-connection",
     requireMention: true,
-  });
+  };
+  const [draft, setDraft] = useState(emptyDraft);
   const [oauthScopes, setOauthScopes] = useState("search:docs:read");
-  const create = useMutation({
+  const save = useMutation({
     mutationFn: async () => {
-      const credential = await center<any>("governance", "/v1/credentials", {
-        method: "POST",
-        body: JSON.stringify({
-          tenantId: "default",
-          name: `${draft.name} 飞书凭据`,
-          kind: "lark-app",
-          value: {
-            appId: draft.appId,
-            appSecret: draft.appSecret,
-            verificationToken: draft.verificationToken || undefined,
-            encryptKey: draft.encryptKey || undefined,
-          },
-        }),
-      });
-      const channel = await center<any>("mg", "/v1/channels", {
-        method: "POST",
+      let credentialRef = draft.credentialRef || undefined;
+      if (draft.appSecret) {
+        const value = {
+          appId: draft.appId,
+          appSecret: draft.appSecret,
+          verificationToken: draft.verificationToken || undefined,
+          encryptKey: draft.encryptKey || undefined,
+        };
+        const existing = credentialRef?.match(
+          /^governance:default:([0-9a-f-]{36})$/i,
+        )?.[1];
+        if (existing) {
+          await center("governance", `/v1/credentials/${existing}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              tenantId: "default",
+              actorId: "platform-console",
+              value,
+              name: `${draft.name} 飞书凭据`,
+              kind: "lark-app",
+              correlationId: randomUuid(),
+            }),
+          });
+        } else {
+          const credential = await center<any>(
+            "governance",
+            "/v1/credentials",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                tenantId: "default",
+                name: `${draft.name} 飞书凭据`,
+                kind: "lark-app",
+                value,
+              }),
+            },
+          );
+          credentialRef = `governance:default:${credential.id}`;
+        }
+      }
+      const channel = await center<any>(
+        "mg",
+        draft.id ? `/v1/channels/${draft.id}` : "/v1/channels",
+        {
+        method: draft.id ? "PUT" : "POST",
         body: JSON.stringify({
           channel: "lark",
           tenantId: "default",
           accountId: draft.appId,
           botId: draft.botId,
           name: draft.name,
-          credentialRef: `governance:default:${credential.id}`,
-          config: { transport: draft.transport },
+          enabled: draft.enabled,
+          credentialRef,
+          config: {
+            ...draft.config,
+            ...parseObjectJson(draft.configJson, "通道配置"),
+            transport: draft.transport,
+          },
         }),
       });
       const sinks = await center<any[]>("mg", "/v1/sinks");
@@ -1343,35 +2476,70 @@ function ChannelsPanel() {
           }),
         });
       }
-      await center("mg", "/v1/routes", {
-        method: "POST",
-        body: JSON.stringify({
-          name: `${draft.name} -> ${draft.botId}`,
-          botId: draft.botId,
-          channelAccountId: channel.id,
-          sinkId: runtimeSink.id,
-          allowBotMessages: false,
-          requireMention: draft.requireMention,
-          autonomousReply:
-            bots.data?.find((bot) => bot.id === draft.botId)
-              ?.autonomousReplyBeta ?? false,
-          conversationTypes: ["dm", "group", "channel", "thread"],
-        }),
-      });
+      const existingRoutes = (routes.data ?? []).filter(
+        (route) => route.channelAccountId === channel.id,
+      );
+      if (existingRoutes.length) {
+        await Promise.all(
+          existingRoutes.map((route) =>
+            center("mg", "/v1/routes", {
+              method: "POST",
+              body: JSON.stringify({
+                ...route,
+                name: `${draft.name} -> ${draft.botId}`,
+                botId: draft.botId,
+                requireMention: draft.requireMention,
+                autonomousReply:
+                  bots.data?.find((bot) => bot.id === draft.botId)
+                    ?.autonomousReplyBeta ?? false,
+              }),
+            }),
+          ),
+        );
+      } else {
+        await center("mg", "/v1/routes", {
+          method: "POST",
+          body: JSON.stringify({
+            name: `${draft.name} -> ${draft.botId}`,
+            botId: draft.botId,
+            channelAccountId: channel.id,
+            sinkId: runtimeSink.id,
+            allowBotMessages: false,
+            requireMention: draft.requireMention,
+            autonomousReply:
+              bots.data?.find((bot) => bot.id === draft.botId)
+                ?.autonomousReplyBeta ?? false,
+            conversationTypes: ["dm", "group", "channel", "thread"],
+          }),
+        });
+      }
       return channel;
     },
     onSuccess: () => {
-      setDraft({
-        name: "",
-        botId: "",
-        appId: "",
-        appSecret: "",
-        verificationToken: "",
-        encryptKey: "",
-        transport: "long-connection",
-        requireMention: true,
-      });
+      setDraft({ ...emptyDraft, config: {}, configJson: "{}" });
       void client.invalidateQueries({ queryKey: ["channels"] });
+      void client.invalidateQueries({ queryKey: ["routes"] });
+    },
+  });
+  const removeChannel = useMutation({
+    mutationFn: async (channel: any) => {
+      const linkedRoutes = (routes.data ?? []).filter(
+        (route) => route.channelAccountId === channel.id,
+      );
+      await Promise.all(
+        linkedRoutes.map((route) =>
+          center("mg", `/v1/routes/${route.id}`, { method: "DELETE" }),
+        ),
+      );
+      return center("mg", `/v1/channels/${channel.id}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: (_result, channel) => {
+      if (draft.id === channel.id)
+        setDraft({ ...emptyDraft, config: {}, configJson: "{}" });
+      void client.invalidateQueries({ queryKey: ["channels"] });
+      void client.invalidateQueries({ queryKey: ["routes"] });
     },
   });
   const probe = useMutation({
@@ -1488,6 +2656,47 @@ function ChannelsPanel() {
                 >
                   <Activity size={16} />
                 </button>
+                <button
+                  className="icon-button"
+                  title="编辑通道"
+                  onClick={() => {
+                    const route = (routes.data ?? []).find(
+                      (item) => item.channelAccountId === channel.id,
+                    );
+                    setDraft({
+                      id: channel.id,
+                      name: channel.name,
+                      botId: channel.botId,
+                      appId: channel.accountId,
+                      appSecret: "",
+                      verificationToken: "",
+                      encryptKey: "",
+                      credentialRef: channel.credentialRef ?? "",
+                      config: channel.config ?? {},
+                      configJson: JSON.stringify(channel.config ?? {}, null, 2),
+                      enabled: channel.enabled,
+                      transport:
+                        channel.config?.transport ?? "long-connection",
+                      requireMention: route?.requireMention ?? true,
+                    });
+                  }}
+                >
+                  <Settings size={16} />
+                </button>
+                <button
+                  className="icon-button danger-button"
+                  title="删除通道"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `确认删除通道“${channel.name}”及其专属消息路由？历史消息不会删除。`,
+                      )
+                    )
+                      removeChannel.mutate(channel);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
             </div>
           ))}
@@ -1495,15 +2704,27 @@ function ChannelsPanel() {
             <div className="empty">暂无通道</div>
           )}
         </div>
-        {(authorize.error || refreshOAuth.error) && (
+        {(authorize.error || refreshOAuth.error || removeChannel.error) && (
           <div className="error form-error">
-            {String(authorize.error ?? refreshOAuth.error)}
+            {String(
+              authorize.error ?? refreshOAuth.error ?? removeChannel.error,
+            )}
           </div>
         )}
       </section>
       <section className="section-band">
         <div className="section-title">
-          <h3>新增飞书通道</h3>
+          <h3>{draft.id ? "编辑飞书通道" : "新增飞书通道"}</h3>
+          {draft.id && (
+            <button
+              className="secondary compact-button"
+              onClick={() =>
+                setDraft({ ...emptyDraft, config: {}, configJson: "{}" })
+              }
+            >
+              取消编辑
+            </button>
+          )}
         </div>
         <div className="channel-form">
           <label>
@@ -1531,6 +2752,7 @@ function ChannelsPanel() {
             App ID
             <input
               value={draft.appId}
+              disabled={Boolean(draft.id)}
               onChange={(e) => setDraft({ ...draft, appId: e.target.value })}
             />
           </label>
@@ -1538,6 +2760,7 @@ function ChannelsPanel() {
             App Secret
             <input
               type="password"
+              placeholder={draft.id ? "留空则保持原凭据" : ""}
               value={draft.appSecret}
               onChange={(e) =>
                 setDraft({ ...draft, appSecret: e.target.value })
@@ -1566,43 +2789,72 @@ function ChannelsPanel() {
             />
             群聊仅在 @ 机器人时响应
           </label>
-          <label>
-            Verification Token
+          <label className="checkbox">
             <input
-              type="password"
-              value={draft.verificationToken}
-              onChange={(e) =>
-                setDraft({ ...draft, verificationToken: e.target.value })
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(event) =>
+                setDraft({ ...draft, enabled: event.target.checked })
               }
             />
+            启用通道
           </label>
-          <label>
-            Encrypt Key
-            <input
-              type="password"
-              value={draft.encryptKey}
-              onChange={(e) =>
-                setDraft({ ...draft, encryptKey: e.target.value })
-              }
-            />
-          </label>
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label>
+                Verification Token
+                <input
+                  type="password"
+                  value={draft.verificationToken}
+                  onChange={(e) =>
+                    setDraft({ ...draft, verificationToken: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Encrypt Key
+                <input
+                  type="password"
+                  value={draft.encryptKey}
+                  onChange={(e) =>
+                    setDraft({ ...draft, encryptKey: e.target.value })
+                  }
+                />
+              </label>
+              <label className="wide-field">
+                通道适配器配置（JSON）
+                <textarea
+                  rows={5}
+                  spellCheck={false}
+                  value={draft.configJson}
+                  onChange={(event) =>
+                    setDraft({ ...draft, configJson: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </details>
           <button
             className="primary"
             disabled={
               !draft.name ||
               !draft.botId ||
               !draft.appId ||
-              !draft.appSecret ||
-              create.isPending
+              (!draft.id && !draft.appSecret) ||
+              save.isPending
             }
-            onClick={() => create.mutate()}
+            onClick={() => save.mutate()}
           >
             <Radio size={16} />
-            保存通道
+            {draft.id ? "保存修改" : "保存通道"}
           </button>
         </div>
-        {create.error && (
-          <div className="error form-error">{String(create.error)}</div>
+        {save.error && (
+          <div className="error form-error">{String(save.error)}</div>
         )}
       </section>
     </div>
@@ -1993,6 +3245,10 @@ function BotsPanel() {
     queryKey: ["model-policies"],
     queryFn: () => center<any[]>("mh", "/v1/routing-policies"),
   });
+  const channels = useQuery({
+    queryKey: ["channels"],
+    queryFn: () => center<any[]>("mg", "/v1/channels"),
+  });
   const [chatBot, setChatBot] = useState<any>();
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<
@@ -2007,16 +3263,24 @@ function BotsPanel() {
     runtime: "model-tool-loop",
     modelPolicyId: "",
     systemPrompt: "",
+    description: "",
+    purpose: "general",
+    effectMode: "standard",
+    capabilityPolicy: "resolved",
     maxConcurrentExecutions: 1,
     autonomousReplyBeta: false,
     historyBackfillBeta: false,
     maxBackfillMessages: 100,
   };
   const [draft, setDraft] = useState(empty);
+  const [editingBotId, setEditingBotId] = useState("");
   const save = useMutation({
     mutationFn: async () => {
-      const saved = await center("runtime", "/v1/bots", {
-        method: "POST",
+      const saved = await center(
+        "runtime",
+        editingBotId ? `/v1/bots/${encodeURIComponent(editingBotId)}` : "/v1/bots",
+        {
+        method: editingBotId ? "PUT" : "POST",
         body: JSON.stringify({
           ...draft,
           modelPolicyId: draft.modelPolicyId || undefined,
@@ -2042,6 +3306,28 @@ function BotsPanel() {
     },
     onSuccess: () => {
       setDraft(empty);
+      setEditingBotId("");
+      void client.invalidateQueries({ queryKey: ["bots"] });
+    },
+  });
+  const removeBot = useMutation({
+    mutationFn: async (bot: any) => {
+      const linked = (channels.data ?? []).filter(
+        (channel) => channel.botId === bot.id,
+      );
+      if (linked.length)
+        throw new Error(
+          `机器人仍绑定 ${linked.length} 个通道，请先删除或迁移这些通道。`,
+        );
+      return center("runtime", `/v1/bots/${encodeURIComponent(bot.id)}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: (_result, bot) => {
+      if (draft.id === bot.id) {
+        setDraft(empty);
+        setEditingBotId("");
+      }
       void client.invalidateQueries({ queryKey: ["bots"] });
     },
   });
@@ -2171,9 +3457,27 @@ function BotsPanel() {
               <button
                 className="icon-button"
                 title="编辑"
-                onClick={() => setDraft(bot)}
+                onClick={() => {
+                  setDraft({ ...empty, ...bot });
+                  setEditingBotId(bot.id);
+                }}
               >
                 <Settings size={16} />
+              </button>
+              <button
+                className="icon-button danger-button"
+                title={
+                  bot.purpose === "system-assistant"
+                    ? "系统助手不能删除"
+                    : "删除机器人"
+                }
+                disabled={bot.purpose === "system-assistant"}
+                onClick={() => {
+                  if (window.confirm(`确认删除机器人“${bot.name}”？`))
+                    removeBot.mutate(bot);
+                }}
+              >
+                <Trash2 size={16} />
               </button>
             </div>
           ))}
@@ -2291,13 +3595,25 @@ function BotsPanel() {
       )}
       <section className="section-band">
         <div className="section-title">
-          <h3>新增或更新机器人</h3>
+          <h3>{editingBotId ? "编辑机器人" : "新增机器人"}</h3>
+          {editingBotId && (
+            <button
+              className="secondary compact-button"
+              onClick={() => {
+                setDraft(empty);
+                setEditingBotId("");
+              }}
+            >
+              取消编辑
+            </button>
+          )}
         </div>
         <div className="bot-form">
           <label>
             Bot ID
             <input
               value={draft.id}
+              disabled={Boolean(editingBotId)}
               onChange={(e) => setDraft({ ...draft, id: e.target.value })}
             />
           </label>
@@ -2345,6 +3661,60 @@ function BotsPanel() {
               }
             />
           </label>
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label className="wide-field">
+                描述
+                <textarea
+                  rows={3}
+                  value={draft.description}
+                  onChange={(event) =>
+                    setDraft({ ...draft, description: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                用途
+                <select
+                  value={draft.purpose}
+                  onChange={(event) =>
+                    setDraft({ ...draft, purpose: event.target.value })
+                  }
+                >
+                  <option value="general">普通机器人</option>
+                  <option value="system-assistant">系统助手</option>
+                </select>
+              </label>
+              <label>
+                副作用模式
+                <select
+                  value={draft.effectMode}
+                  onChange={(event) =>
+                    setDraft({ ...draft, effectMode: event.target.value })
+                  }
+                >
+                  <option value="standard">标准</option>
+                  <option value="read-only">只读</option>
+                </select>
+              </label>
+              <label>
+                能力策略
+                <select
+                  value={draft.capabilityPolicy}
+                  onChange={(event) =>
+                    setDraft({ ...draft, capabilityPolicy: event.target.value })
+                  }
+                >
+                  <option value="resolved">加载已授权能力</option>
+                  <option value="none">禁用全部能力</option>
+                </select>
+              </label>
+            </div>
+          </details>
           <label>
             最大并发
             <input
@@ -2411,11 +3781,14 @@ function BotsPanel() {
             onClick={() => save.mutate()}
           >
             <Bot size={16} />
-            保存机器人
+            {editingBotId ? "保存修改" : "保存机器人"}
           </button>
         </div>
         {save.error && (
           <div className="error form-error">{String(save.error)}</div>
+        )}
+        {removeBot.error && (
+          <div className="error form-error">{String(removeBot.error)}</div>
         )}
       </section>
     </div>
@@ -2525,6 +3898,10 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
     queryKey: ["capability-packages"],
     queryFn: () => center<any[]>("cr", "/v1/packages"),
   });
+  const bindings = useQuery({
+    queryKey: ["capability-bindings"],
+    queryFn: () => center<any[]>("cr", "/v1/bindings"),
+  });
   const conflicts = useQuery({
     queryKey: ["capability-conflicts"],
     queryFn: () => center<any[]>("cr", "/v1/conflicts"),
@@ -2540,7 +3917,15 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
     path: "",
   });
   const [appArchive, setAppArchive] = useState<File>();
-  const [binding, setBinding] = useState({ capabilityId: "", botId: "" });
+  const [binding, setBinding] = useState({
+    id: "",
+    capabilityId: "",
+    botId: "",
+    enabled: true,
+    configJson: "{}",
+    credentialRefs: "",
+    allowedTriggers: "",
+  });
   const [commandDraft, setCommandDraft] = useState({
     name: "",
     command: "",
@@ -2562,6 +3947,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["capabilities"] });
     void client.invalidateQueries({ queryKey: ["capability-packages"] });
+    void client.invalidateQueries({ queryKey: ["capability-bindings"] });
     void client.invalidateQueries({ queryKey: ["capability-conflicts"] });
   };
   useEffect(() => {
@@ -2661,21 +4047,49 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
   const bind = useMutation({
     mutationFn: () => {
       const kind = items.find((item) => item.id === binding.capabilityId)?.kind;
-      return center("cr", "/v1/bindings", {
-        method: "POST",
+      return center(
+        "cr",
+        binding.id ? `/v1/bindings/${binding.id}` : "/v1/bindings",
+        {
+        method: binding.id ? "PUT" : "POST",
         body: JSON.stringify({
-          ...binding,
-          enabled: true,
-          config: {},
-          credentialRefs: [],
-          allowedTriggers:
-            kind === "command"
+          capabilityId: binding.capabilityId,
+          botId: binding.botId,
+          enabled: binding.enabled,
+          config: parseObjectJson(binding.configJson, "能力绑定配置"),
+          credentialRefs: binding.credentialRefs
+            .split(/[,，\s]+/)
+            .filter(Boolean),
+          allowedTriggers: binding.allowedTriggers
+            ? binding.allowedTriggers.split(/[,，\s]+/).filter(Boolean)
+            : kind === "command"
               ? ["command", "manual", "scheduled"]
               : ["agent", "manual", "scheduled", "workflow"],
         }),
       });
     },
-    onSuccess: () => setBinding({ capabilityId: "", botId: "" }),
+    onSuccess: () => {
+      setBinding({
+        id: "",
+        capabilityId: "",
+        botId: "",
+        enabled: true,
+        configJson: "{}",
+        credentialRefs: "",
+        allowedTriggers: "",
+      });
+      refresh();
+    },
+  });
+  const removeBinding = useMutation({
+    mutationFn: (id: string) =>
+      center("cr", `/v1/bindings/${id}`, { method: "DELETE" }),
+    onSuccess: refresh,
+  });
+  const removePackage = useMutation({
+    mutationFn: (id: string) =>
+      center("cr", `/v1/packages/${id}`, { method: "DELETE" }),
+    onSuccess: refresh,
   });
   const createCommand = useMutation({
     mutationFn: async () => {
@@ -3172,8 +4586,31 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
         <div className="section-title">
           <h3>能力清单</h3>
           <span>
-            {items.length} 个能力 / {packages.data?.length ?? 0} 个包
+            {items.length} 个能力 / {packages.data?.filter((item) => item.state !== "removed").length ?? 0} 个包
           </span>
+        </div>
+        <div className="approval-list">
+          {(packages.data ?? [])
+            .filter((item) => item.state !== "removed")
+            .map((item) => (
+              <div className="approval-row" key={item.id}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.version} · {item.state}</span>
+                </div>
+                <button
+                  className="icon-button danger"
+                  title="卸载能力包"
+                  disabled={removePackage.isPending}
+                  onClick={() => {
+                    if (window.confirm(`确认卸载能力包“${item.name}”？相关能力将停止解析。`))
+                      removePackage.mutate(item.id);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
         </div>
         <DataTable items={items} />
         <div className="binding-form">
@@ -3211,9 +4648,123 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
             onClick={() => bind.mutate()}
           >
             <Route size={16} />
-            授权给机器人
+            {binding.id ? "保存绑定" : "授权给机器人"}
           </button>
+          <label className="checkbox-line">
+            <input
+              type="checkbox"
+              checked={binding.enabled}
+              onChange={(event) =>
+                setBinding({ ...binding, enabled: event.target.checked })
+              }
+            />
+            启用
+          </label>
+          {binding.id && (
+            <button
+              className="secondary"
+              onClick={() =>
+                setBinding({
+                  id: "",
+                  capabilityId: "",
+                  botId: "",
+                  enabled: true,
+                  configJson: "{}",
+                  credentialRefs: "",
+                  allowedTriggers: "",
+                })
+              }
+            >
+              取消编辑
+            </button>
+          )}
+          <details className="advanced-config wide-field">
+            <summary>
+              <Settings size={16} />
+              高级配置
+            </summary>
+            <div className="advanced-grid">
+              <label>
+                允许的触发方式
+                <input
+                  placeholder="agent, manual, scheduled"
+                  value={binding.allowedTriggers}
+                  onChange={(event) =>
+                    setBinding({ ...binding, allowedTriggers: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                凭据引用
+                <input
+                  placeholder="多个引用用逗号分隔"
+                  value={binding.credentialRefs}
+                  onChange={(event) =>
+                    setBinding({ ...binding, credentialRefs: event.target.value })
+                  }
+                />
+              </label>
+              <label className="wide-field">
+                绑定配置（JSON）
+                <textarea
+                  rows={4}
+                  spellCheck={false}
+                  value={binding.configJson}
+                  onChange={(event) =>
+                    setBinding({ ...binding, configJson: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </details>
         </div>
+        <div className="approval-list">
+          {(bindings.data ?? []).map((item) => (
+            <div className="approval-row" key={item.id}>
+              <div>
+                <strong>
+                  {items.find((capability) => capability.id === item.capabilityId)?.name ?? item.capabilityId}
+                </strong>
+                <span>
+                  {(bots.data ?? []).find((bot) => bot.id === item.botId)?.name ?? item.botId}
+                  {item.enabled ? " · 已启用" : " · 已停用"}
+                </span>
+              </div>
+              <button
+                className="icon-button"
+                title="编辑绑定"
+                onClick={() =>
+                  setBinding({
+                    id: item.id,
+                    capabilityId: item.capabilityId,
+                    botId: item.botId,
+                    enabled: item.enabled,
+                    configJson: JSON.stringify(item.config ?? {}, null, 2),
+                    credentialRefs: (item.credentialRefs ?? []).join(", "),
+                    allowedTriggers: (item.allowedTriggers ?? []).join(", "),
+                  })
+                }
+              >
+                <Wrench size={16} />
+              </button>
+              <button
+                className="icon-button danger"
+                title="删除绑定"
+                onClick={() => {
+                  if (window.confirm("确认删除这条能力绑定？"))
+                    removeBinding.mutate(item.id);
+                }}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {(bind.error || removeBinding.error || removePackage.error) && (
+          <div className="error form-error">
+            {String(bind.error ?? removeBinding.error ?? removePackage.error)}
+          </div>
+        )}
       </section>
       {editing && (
         <div
@@ -3934,6 +5485,8 @@ function GenericPage({
         <BotsPanel />
       ) : id === "channels" ? (
         <ChannelsPanel />
+      ) : id === "context" ? (
+        <ContextPanel />
       ) : id === "schedules" ? (
         <Schedules items={items} refetch={() => void query.refetch()} />
       ) : id === "browser" ? (
@@ -4065,6 +5618,13 @@ function AppShell({ me }: { me: any }) {
           ))}
         </nav>
         <div className="aside-footer">
+          <button
+            className={page === "manual" ? "active" : ""}
+            onClick={() => choose("manual")}
+          >
+            <BookOpen size={17} />
+            使用手册
+          </button>
           <button
             onClick={() => diagnostics.mutate()}
             disabled={diagnostics.isPending}

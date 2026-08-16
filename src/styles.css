@@ -187,7 +187,8 @@ nav button,
 }
 nav button:hover,
 nav button.active,
-.aside-footer button:hover {
+.aside-footer button:hover,
+.aside-footer button.active {
   background: #203b2d;
   color: #fff;
 }
@@ -623,6 +624,33 @@ progress {
   gap: 10px;
   align-items: center;
 }
+.advanced-config {
+  align-self: stretch;
+  border-top: 1px solid #e4ebe7;
+  padding-top: 10px;
+}
+.advanced-config summary {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #536159;
+  font-weight: 650;
+  cursor: pointer;
+  user-select: none;
+}
+.advanced-config summary::-webkit-details-marker {
+  display: none;
+}
+.advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.advanced-grid .wide-field {
+  grid-column: 1 / -1;
+}
 .subsection-title {
   margin-top: 16px;
   padding-top: 14px;
@@ -886,18 +914,66 @@ progress {
   gap: 8px;
   margin-top: 12px;
 }
-.model-form {
+.model-provider-form,
+.model-form,
+.context-form {
   display: grid;
-  grid-template-columns: 1.1fr 1.3fr 1.1fr 160px auto;
+  grid-template-columns: 1.1fr 1.1fr 1.4fr 1.2fr auto auto;
   gap: 8px;
   margin-top: 12px;
+  align-items: center;
 }
 .policy-form {
   display: grid;
-  grid-template-columns: 1fr 180px 220px auto;
+  grid-template-columns: minmax(180px, 1fr) 160px 200px 100px 160px;
   gap: 10px;
   align-items: center;
   margin-top: 12px;
+}
+.model-entity-list {
+  border: 1px solid #dce4df;
+}
+.model-entity-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf1ee;
+}
+.model-entity-row:last-child {
+  border-bottom: 0;
+}
+.model-entity-row > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.model-entity-row strong,
+.model-entity-row span,
+.model-entity-row code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-entity-row span {
+  color: #68756d;
+  font-size: 12px;
+}
+.model-entity-row code {
+  color: #526159;
+  font-size: 12px;
+}
+.editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+.editor-heading strong {
+  font-size: 13px;
 }
 .checkbox {
   display: flex;
@@ -1269,7 +1345,9 @@ progress {
     grid-template-columns: 1fr;
   }
   .inline-form,
+  .model-provider-form,
   .model-form,
+  .context-form,
   .policy-form,
   .skill-import-row,
   .git-skill-form,
@@ -1292,8 +1370,24 @@ progress {
   .schedule-form {
     grid-template-columns: minmax(0, 1fr);
   }
+  .model-entity-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .model-entity-row > code {
+    grid-column: 1;
+  }
+  .model-entity-row > .row-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
   .assistant-compose {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .advanced-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .advanced-grid .wide-field {
+    grid-column: auto;
   }
   .assistant-message {
     width: 100%;
@@ -1432,6 +1526,15 @@ html[data-theme="dark"] .manual-tabs,
 html[data-theme="dark"] .manual-guide-list {
   background: #19221d;
   border-color: #2c3831;
+}
+html[data-theme="dark"] .model-entity-list {
+  border-color: #2c3831;
+}
+html[data-theme="dark"] .model-entity-row {
+  border-color: #2c3831;
+}
+html[data-theme="dark"] .model-entity-row code {
+  color: #aab6ae;
 }
 html[data-theme="dark"] .manual-guide {
   border-color: #2c3831;
