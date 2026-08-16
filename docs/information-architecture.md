@@ -23,9 +23,17 @@
 - 高频字段直接展示；低频、协议、范围、重试、安全和原始 JSON 放在“高级配置”折叠区。
 - 保存成功返回列表；取消不修改持久数据。
 
-同一个中心包含多类实体时，列表可以按全宽 section 分组；编辑时只显示当前实体详情，其他实体列表暂时隐藏。能力中心使用二级 tab 区分“能力清单”“导入与更新”“创建能力”，避免导入、Builder、命令和授权同时堆叠。
+同一个中心包含多类实体时，使用左侧二级导航和页内 tab 呈现清晰实体边界；编辑时只显示当前实体详情，其他实体列表暂时隐藏。模型中心区分“服务商 / 模型部署 / 使用策略”，能力中心区分“能力目录 / 机器人授权 / 导入与更新 / 创建能力”，插件控制面区分“运行时插件 / 运行方案 / 平台插件”。
 
-“扩展与插件”使用三级视图：Runtime Provider、Runtime Profile、平台扩展。Provider 与平台扩展从列表进入详情，详情展示身份、隔离、契约、能力协商、探针、生命周期和日志；平台扩展还展示持久化代次、安装时间和状态更新时间，使重启恢复与版本升级可直接核验。Profile 使用列表/编辑详情并保留高级组合配置。生命周期变更只对管理员显示并由 BFF 再次强制校验。
+“插件与扩展”使用三级视图：运行时插件、运行方案、平台插件。Provider 与平台插件从列表进入详情，详情展示身份、隔离、契约、能力协商、探针、生命周期和日志；平台插件还展示持久化代次、安装时间和状态更新时间，使重启恢复与版本升级可直接核验。运行方案使用列表/编辑详情并保留高级组合配置。生命周期变更只对管理员显示并由 BFF 再次强制校验，内部 `draining` 动作在 UI 中表达为“停止接收新任务”。完整模型见 `docs/plugin-control-plane.md`。
+
+## Page guidance and interaction feedback
+
+Every operational page places a page-specific guide below the title. It explains the page purpose, concepts, configuration order and resulting effects; the full searchable manual remains in the auxiliary navigation.
+
+List views preserve one entity per visual row. Cells do not wrap, wide datasets scroll horizontally, and only the primary command stays visible when an entity has many operations. Remaining commands open from the three-dot action menu. Forms use common control heights and bottom alignment so labels, inputs, selects, checkboxes and submit buttons share a stable baseline.
+
+Every React Query mutation drives a global progress strip. Successful operations emit a completion notice; failed operations retain the server message. Clicking a disabled action reports its title or required configuration instead of failing silently.
 
 ## 实现约束
 

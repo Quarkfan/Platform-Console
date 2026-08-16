@@ -8,4 +8,6 @@ The navigation and list/detail interaction contract is documented in `docs/infor
 
 Authentication supports the production HTTPS origin and the operator's loopback SSH-tunnel origin without weakening public cookies. Loopback cookie handling is selected only for `127.0.0.1`, `localhost` and `::1`; all other hosts use the Secure production auth instance.
 
-The “扩展与插件” page manages Runtime Providers, revisioned Runtime Profiles and the cross-center extension inventory. Provider detail pages expose capability negotiation, isolation, probe, lifecycle and logs. Lifecycle changes are admin-only in both UI and BFF authorization.
+The “插件与扩展” page manages Runtime Providers, revisioned Runtime Profiles and the cross-center extension inventory. Provider detail pages expose capability negotiation, isolation, probe, lifecycle and logs. Lifecycle changes are admin-only in both UI and BFF authorization. The product meaning, center boundaries and safe lifecycle sequence are documented in [docs/plugin-control-plane.md](docs/plugin-control-plane.md).
+
+Every operational page includes an expandable page guide covering concepts, configuration sequence and resulting effects. Model, capability and plugin management use secondary navigation. Lists keep one record per row with horizontal overflow and compact overflow actions; forms share stable control dimensions, and all mutations expose progress plus success or actionable error feedback.

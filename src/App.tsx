@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Activity,
   Archive,
@@ -20,6 +25,7 @@ import {
   KeyRound,
   LogOut,
   MessageSquare,
+  MoreHorizontal,
   Play,
   Pause,
   Plus,
@@ -41,8 +47,13 @@ import {
 import { authClient } from "./auth-client";
 import { api, center } from "./api";
 import { randomUuid } from "./ids";
-type Nav = { id: string; label: string; icon: any };
-const navGroups: Array<{ label: string; items: Nav[] }> = [
+type Nav = {
+  id: string;
+  label: string;
+  icon: any;
+  children?: Array<{ id: string; label: string }>;
+};
+export const navGroups: Array<{ label: string; items: Nav[] }> = [
   {
     label: "工作台",
     items: [
@@ -56,9 +67,37 @@ const navGroups: Array<{ label: string; items: Nav[] }> = [
       { id: "bots", label: "机器人", icon: Bot },
       { id: "channels", label: "通道", icon: Radio },
       { id: "context", label: "上下文", icon: Brain },
-      { id: "models", label: "模型", icon: Sparkles },
-      { id: "capabilities", label: "能力", icon: Boxes },
-      { id: "runtime-extensions", label: "扩展与插件", icon: Plug },
+      {
+        id: "models",
+        label: "模型",
+        icon: Sparkles,
+        children: [
+          { id: "providers", label: "服务商" },
+          { id: "deployments", label: "模型部署" },
+          { id: "policies", label: "使用策略" },
+        ],
+      },
+      {
+        id: "capabilities",
+        label: "能力",
+        icon: Boxes,
+        children: [
+          { id: "list", label: "能力目录" },
+          { id: "bindings", label: "机器人授权" },
+          { id: "import", label: "导入与更新" },
+          { id: "create", label: "创建能力" },
+        ],
+      },
+      {
+        id: "runtime-extensions",
+        label: "插件与扩展",
+        icon: Plug,
+        children: [
+          { id: "providers", label: "运行时插件" },
+          { id: "profiles", label: "运行方案" },
+          { id: "platform", label: "平台插件" },
+        ],
+      },
     ],
   },
   {
@@ -295,6 +334,330 @@ const manualSections: ManualSection[] = [
     ],
   },
 ];
+type PageGuideContent = {
+  intro: string;
+  concepts: string[];
+  configure: string[];
+  effects: string[];
+};
+export const pageGuides: Record<string, PageGuideContent> = {
+  overview: {
+    intro: "查看各中心是否存活、依赖是否就绪，是开始配置和排障的第一站。",
+    concepts: ["进程存活表示服务可访问", "依赖就绪表示服务可以承接业务"],
+    configure: ["通常无需配置", "发现异常时先刷新，再生成排障包"],
+    effects: ["确认平台当前可用性", "快速定位故障所在中心"],
+  },
+  assistant: {
+    intro:
+      "读取平台只读状态，回答配置和排障问题，并生成需要人工确认的配置草稿。",
+    concepts: ["回答不会直接修改配置", "草稿必须由有权限的用户确认"],
+    configure: ["描述目标、对象和当前现象", "检查草稿后前往对应页面执行"],
+    effects: ["缩短跨页面排查时间", "保留人工决策和审计边界"],
+  },
+  bots: {
+    intro: "机器人是运行职责、模型策略、上下文和能力授权的组合入口。",
+    concepts: [
+      "Runtime 决定执行内核",
+      "模型策略、上下文和能力分别由对应中心管理",
+    ],
+    configure: [
+      "先准备模型策略",
+      "填写职责提示词并保存",
+      "通过对话入口验证后再绑定通道",
+    ],
+    effects: ["生成独立运行身份和工作区", "通道消息可以路由到该机器人"],
+  },
+  channels: {
+    intro:
+      "这里只管理实际接入的消息通道账号及其机器人路由，不展示内部 SDK 注册信息。",
+    concepts: [
+      "一个通道账号对应一套平台凭据",
+      "消息接收与发送保持账号和机器人隔离",
+    ],
+    configure: [
+      "准备飞书 App ID 与 App Secret",
+      "选择机器人和接收方式",
+      "保存后执行检测，按需完成用户授权",
+    ],
+    effects: ["飞书消息进入指定机器人", "机器人输出从绑定账号投递回通道"],
+  },
+  context: {
+    intro:
+      "上下文中心统一管理知识来源与短、中、长期记忆，并决定哪些机器人可以召回它们。",
+    concepts: [
+      "来源描述内容从哪里来",
+      "绑定描述哪个机器人可以用以及优先级",
+      "TTL 控制内容多久后视为过期",
+    ],
+    configure: [
+      "先创建文件、网页、飞书或外部来源",
+      "再建立来源与机器人的绑定",
+      "按需设置新鲜度、标签和作用域",
+    ],
+    effects: ["运行时按范围召回知识和记忆", "不同机器人之间不会默认共享上下文"],
+  },
+  models: {
+    intro:
+      "按服务商、模型部署、使用策略三层管理所有模型类型，不限于大语言模型。",
+    concepts: [
+      "服务商负责协议、地址和凭据",
+      "模型部署对应具体模型 ID 和能力",
+      "使用策略负责固定、轮流、随机和失败切换",
+    ],
+    configure: [
+      "先添加并检测服务商",
+      "再登记模型部署",
+      "最后创建策略并分配给机器人",
+    ],
+    effects: [
+      "模型可被统一路由、统计和故障切换",
+      "图像、音频、视频模型也可由能力封装调用",
+    ],
+  },
+  capabilities: {
+    intro:
+      "能力目录统一管理 Skill、命令、工作流、MCP、浏览器、媒体和自定义应用。",
+    concepts: [
+      "能力包是可安装版本",
+      "能力是包内可解析的功能",
+      "机器人授权决定谁能在什么触发方式下调用",
+    ],
+    configure: [
+      "在目录确认能力状态和风险",
+      "导入或创建能力包",
+      "在机器人授权中选择能力、机器人和允许触发方式",
+    ],
+    effects: ["运行时按授权解析和注入能力", "凭据、触发方式和风险保持可审计"],
+  },
+  "runtime-extensions": {
+    intro:
+      "这是插件架构的控制面：查看、组合和管理各中心已经注册的 Provider，而不是复制中心业务配置。",
+    concepts: [
+      "Provider 是可替换实现",
+      "运行方案把运行时插件与模型、能力、上下文组合",
+      "平台插件显示各中心扩展的生命周期",
+    ],
+    configure: [
+      "先检测插件并查看能力合同",
+      "创建运行方案并选择备用 Provider",
+      "停止接收新任务后再停用正在工作的插件",
+    ],
+    effects: ["扩展可以独立升级和替换", "失败插件可隔离，消费者只依赖稳定合同"],
+  },
+  messages: {
+    intro:
+      "查看 Message Gateway 标准化后的消息历史，用于追踪消息从哪里来、属于谁和流向哪里。",
+    concepts: [
+      "消息、账号、会话和发送人都有独立标识",
+      "历史查询不等于自动补处理",
+    ],
+    configure: ["通常无需配置", "按标识和时间确认消息是否进入网关"],
+    effects: [
+      "定位接收、标准化和路由问题",
+      "为调度补处理等上层能力提供查询依据",
+    ],
+  },
+  executions: {
+    intro:
+      "查看机器人运行实例、状态和结果，是消息、调度与实际运行之间的追踪入口。",
+    concepts: [
+      "执行记录一次运行请求",
+      "等待审批和失败是明确状态，不应盲目等待",
+    ],
+    configure: ["按机器人、来源和时间查看", "失败时打开详情并沿关联 ID 排查"],
+    effects: ["确认任务是否真正进入运行时", "获得结果、错误和耗时证据"],
+  },
+  schedules: {
+    intro: "创建周期任务、立即验证，并持续查看上次执行、下次执行和运行日志。",
+    concepts: [
+      "计划决定何时触发",
+      "错过策略决定离线恢复方式",
+      "立即执行不改变原计划",
+    ],
+    configure: [
+      "选择每天、每周、间隔或 Cron",
+      "填写机器人、时区和完整 Prompt",
+      "先立即执行，再确认下次时间",
+    ],
+    effects: ["调度中心按计划创建运行请求", "重试、追赶和日志让过程可见"],
+  },
+  resources: {
+    intro: "查看存储、缓存、工作区、诊断包和 FFmpeg 媒体任务等平台资源。",
+    concepts: ["资源记录与实际文件分离", "清理策略只删除满足条件的受管资源"],
+    configure: [
+      "查看容量和保留时间",
+      "创建媒体任务或下载诊断产物",
+      "清理前确认范围",
+    ],
+    effects: ["控制磁盘增长", "统一管理截图、音视频和排障文件"],
+  },
+  browser: {
+    intro:
+      "运行受域名约束的浏览器 Agent 或确定性工作流，用于读网页、截图和经过治理的交互。",
+    concepts: [
+      "Agent 根据目标规划步骤",
+      "工作流按固定动作执行",
+      "登录、提交和下载可能触发审批",
+    ],
+    configure: [
+      "填写起始网址",
+      "选择 Agent 或工作流",
+      "Agent 模式选择模型策略并描述目标",
+    ],
+    effects: [
+      "产生可审计的浏览器会话和结果",
+      "截图、录像和下载文件进入资源中心",
+    ],
+  },
+  governance: {
+    intro: "管理审批、凭据引用、脱敏和审计，阻止高风险能力静默执行。",
+    concepts: ["批准只针对当前请求", "凭据保存后业务中心只持有引用"],
+    configure: ["核对请求人、动作、目标和风险", "明确后批准，不明确则拒绝"],
+    effects: ["暂停或恢复受控执行", "形成可追溯的安全记录"],
+  },
+  accounts: {
+    intro: "管理控制台用户和角色，不用于管理飞书或模型服务商账号。",
+    concepts: [
+      "管理员负责配置和账号",
+      "操作员负责日常执行",
+      "只读用户只能查看",
+    ],
+    configure: ["每人创建独立账号", "按职责选择角色", "人员变动时及时停用"],
+    effects: ["控制管理面的访问范围", "保留独立操作身份"],
+  },
+  settings: {
+    intro:
+      "管理平台级偏好、模型使用总策略和配置迁移；具体实体仍在各中心页面维护。",
+    concepts: [
+      "高级配置默认收起",
+      "导出包不包含密钥",
+      "系统设置不替代中心业务配置",
+    ],
+    configure: ["设置平台默认策略", "需要迁移时先导出备份并预检导入包"],
+    effects: ["统一全局行为", "支持受控配置迁移和回退"],
+  },
+};
+
+function PageGuide({ page }: { page: string }) {
+  const guide = pageGuides[page];
+  if (!guide) return null;
+  return (
+    <details className="page-guide" open>
+      <summary>
+        <BookOpen size={16} />
+        <span>本页指引</span>
+        <small>{guide.intro}</small>
+      </summary>
+      <div className="page-guide-grid">
+        {[
+          ["概念理解", guide.concepts],
+          ["怎么使用与配置", guide.configure],
+          ["执行后会发生什么", guide.effects],
+        ].map(([title, lines]) => (
+          <section key={title as string}>
+            <strong>{title as string}</strong>
+            <ul>
+              {(lines as string[]).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ActionMenu({ children }: { children: React.ReactNode }) {
+  const [position, setPosition] = useState<{ top: number; left: number }>();
+  return (
+    <>
+      <button
+        className="icon-button"
+        title="更多操作"
+        aria-label="更多操作"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          setPosition({
+            top: Math.min(rect.bottom + 6, window.innerHeight - 220),
+            left: Math.max(12, rect.right - 210),
+          });
+        }}
+      >
+        <MoreHorizontal size={18} />
+      </button>
+      {position && (
+        <div
+          className="action-menu-backdrop"
+          onClick={() => setPosition(undefined)}
+        >
+          <div
+            className="action-menu"
+            style={position}
+            onClick={() => setPosition(undefined)}
+          >
+            {children}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function OperationFeedback() {
+  const mutating = useIsMutating();
+  const [message, setMessage] = useState("");
+  const [kind, setKind] = useState<"success" | "error">("success");
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ message: string; kind: "success" | "error" }>
+      ).detail;
+      setMessage(detail.message);
+      setKind(detail.kind);
+      window.setTimeout(
+        () => setMessage(""),
+        detail.kind === "error" ? 6000 : 2500,
+      );
+    };
+    window.addEventListener("qft-operation", listener);
+    const disabledHint = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest(
+        "button:disabled",
+      ) as HTMLButtonElement | null;
+      if (!button) return;
+      setKind("error");
+      setMessage(
+        button.dataset.disabledReason ||
+          button.title ||
+          (mutating > 0
+            ? "操作正在进行，请稍候。"
+            : "请先完成必填配置后再操作。"),
+      );
+      window.setTimeout(() => setMessage(""), 3500);
+    };
+    document.addEventListener("pointerdown", disabledHint, true);
+    return () => {
+      window.removeEventListener("qft-operation", listener);
+      document.removeEventListener("pointerdown", disabledHint, true);
+    };
+  }, [mutating]);
+  return (
+    <>
+      {mutating > 0 && (
+        <div
+          className="global-progress"
+          role="progressbar"
+          aria-label="操作进行中"
+        >
+          <span />
+        </div>
+      )}
+      {message && <div className={`operation-toast ${kind}`}>{message}</div>}
+    </>
+  );
+}
 function Login() {
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState(""),
@@ -522,6 +885,7 @@ function Overview() {
           </div>
         }
       />
+      <PageGuide page="overview" />
       <div className="status-summary" aria-label="平台健康摘要">
         <div>
           <span>服务</span>
@@ -687,7 +1051,7 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
       {!editorOpen && (
         <>
           <div className="toolbar">
-            <span>{items.length} 个任务</span>
+            <span className="toolbar-count">共 {items.length} 个任务</span>
             <button
               className="primary compact-button"
               onClick={() => {
@@ -719,74 +1083,75 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
                 </div>
                 <button
                   className="secondary"
-                  onClick={() => run.mutate(x.id)}
-                  disabled={
-                    run.isPending ||
-                    (x.schedule?.type === "once" && Boolean(x.lastRunAt))
+                  onClick={() =>
+                    x.schedule?.type === "once" && x.lastRunAt
+                      ? window.alert("一次性任务已经执行完成，不能重复运行。")
+                      : run.mutate(x.id)
                   }
+                  disabled={run.isPending}
                 >
                   <Play size={16} />
-                  立即执行
+                  {run.isPending ? "正在提交" : "立即执行"}
                 </button>
-                <button
-                  className="icon-button"
-                  title={x.enabled ? "暂停任务" : "恢复任务"}
-                  onClick={() => toggle.mutate(x)}
-                  disabled={x.schedule?.type === "once" && Boolean(x.lastRunAt)}
-                >
-                  {x.enabled ? <Pause size={16} /> : <Play size={16} />}
-                </button>
-                <button
-                  className="icon-button"
-                  title="运行日志"
-                  onClick={() => setSelected(x)}
-                >
-                  <History size={16} />
-                </button>
-                <button
-                  className="icon-button"
-                  title={
-                    x.target?.type === "runtime" && x.schedule?.type !== "once"
-                      ? "编辑任务"
-                      : "该系统任务不支持在此编辑"
-                  }
-                  disabled={
-                    x.target?.type !== "runtime" || x.schedule?.type === "once"
-                  }
-                  onClick={() => {
-                    setDraft({
-                      id: x.id,
-                      tenantId: x.tenantId,
-                      name: x.name,
-                      botId: x.botId,
-                      enabled: x.enabled,
-                      scheduleType: x.schedule.type,
-                      time: x.schedule.time ?? "08:00",
-                      weekday: x.schedule.weekday ?? 1,
-                      intervalSeconds: x.schedule.seconds ?? 3600,
-                      cron: x.schedule.expression ?? "0 8 * * 1-5",
-                      timezone: x.timezone,
-                      prompt: String(x.target.payload?.prompt ?? ""),
-                      retryMaxAttempts: x.retry?.maxAttempts ?? 2,
-                      retryDelaySeconds: x.retry?.delaySeconds ?? 30,
-                      misfire: x.misfire ?? "run-once",
-                      maxBackfill: x.maxBackfill ?? 100,
-                    });
-                    setEditorOpen(true);
-                  }}
-                >
-                  <Settings size={16} />
-                </button>
-                <button
-                  className="icon-button danger-button"
-                  title="删除任务"
-                  onClick={() => {
-                    if (window.confirm(`确认删除调度任务“${x.name}”？`))
-                      remove.mutate(x);
-                  }}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <ActionMenu>
+                  <button
+                    onClick={() =>
+                      x.schedule?.type === "once" && x.lastRunAt
+                        ? window.alert("一次性任务已经结束，不能再暂停或恢复。")
+                        : toggle.mutate(x)
+                    }
+                  >
+                    {x.enabled ? <Pause size={16} /> : <Play size={16} />}
+                    {x.enabled ? "暂停任务" : "恢复任务"}
+                  </button>
+                  <button onClick={() => setSelected(x)}>
+                    <History size={16} />
+                    运行日志
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (
+                        x.target?.type !== "runtime" ||
+                        x.schedule?.type === "once"
+                      ) {
+                        window.alert("该系统任务或一次性任务不支持在此编辑。");
+                        return;
+                      }
+                      setDraft({
+                        id: x.id,
+                        tenantId: x.tenantId,
+                        name: x.name,
+                        botId: x.botId,
+                        enabled: x.enabled,
+                        scheduleType: x.schedule.type,
+                        time: x.schedule.time ?? "08:00",
+                        weekday: x.schedule.weekday ?? 1,
+                        intervalSeconds: x.schedule.seconds ?? 3600,
+                        cron: x.schedule.expression ?? "0 8 * * 1-5",
+                        timezone: x.timezone,
+                        prompt: String(x.target.payload?.prompt ?? ""),
+                        retryMaxAttempts: x.retry?.maxAttempts ?? 2,
+                        retryDelaySeconds: x.retry?.delaySeconds ?? 30,
+                        misfire: x.misfire ?? "run-once",
+                        maxBackfill: x.maxBackfill ?? 100,
+                      });
+                      setEditorOpen(true);
+                    }}
+                  >
+                    <Settings size={16} />
+                    编辑任务
+                  </button>
+                  <button
+                    className="danger-button"
+                    onClick={() => {
+                      if (window.confirm(`确认删除调度任务“${x.name}”？`))
+                        remove.mutate(x);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                    删除任务
+                  </button>
+                </ActionMenu>
               </div>
             ))}
           </div>
@@ -1678,7 +2043,13 @@ function ContextPanel() {
     </div>
   );
 }
-function ModelsPanel() {
+function ModelsPanel({
+  view,
+  onViewChange,
+}: {
+  view: "providers" | "deployments" | "policies";
+  onViewChange: (view: "providers" | "deployments" | "policies") => void;
+}) {
   const client = useQueryClient();
   const providers = useQuery({
     queryKey: ["model-providers"],
@@ -1911,11 +2282,31 @@ function ModelsPanel() {
     removeEntity.error;
   return (
     <div
-      className={`stack models-workspace ${editor ? `editing edit-${editor}` : "listing"}`}
+      className={`stack models-workspace view-${view} ${editor ? `editing edit-${editor}` : "listing"}`}
     >
+      <div className="subview-tabs" role="tablist" aria-label="模型管理视图">
+        {[
+          ["providers", "服务商"],
+          ["deployments", "模型部署"],
+          ["policies", "使用策略"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            className={view === id ? "active" : ""}
+            role="tab"
+            aria-selected={view === id}
+            onClick={() => {
+              setEditor(undefined);
+              onViewChange(id as typeof view);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <section className="section-band provider-section">
         <div className="section-title">
-          <h3>Model Provider</h3>
+          <h3>模型服务商</h3>
           {!editor && (
             <div className="section-actions">
               <span>{providers.data?.length ?? 0} 个</span>
@@ -1944,40 +2335,46 @@ function ModelsPanel() {
               <code>{item.baseUrl}</code>
               <div className="row-actions">
                 <button
-                  className="icon-button"
-                  title="检测 Provider"
+                  className="secondary compact-button"
                   onClick={() => probeProvider.mutate(item.id)}
+                  disabled={probeProvider.isPending}
                 >
                   <Activity size={16} />
+                  检测
                 </button>
-                <button
-                  className="icon-button"
-                  title="编辑 Provider"
-                  onClick={() => {
-                    setProvider({
-                      id: item.id,
-                      name: item.name,
-                      protocol: item.protocol,
-                      baseUrl: item.baseUrl,
-                      apiKey: "",
-                      credentialRef: item.credentialRef ?? "",
-                      enabled: item.enabled,
-                      priority: item.priority,
-                      weight: item.weight,
-                      headersJson: JSON.stringify(item.headers ?? {}, null, 2),
-                    });
-                    setEditor("provider");
-                  }}
-                >
-                  <Settings size={16} />
-                </button>
-                <button
-                  className="icon-button danger-button"
-                  title="删除 Provider"
-                  onClick={() => remove("provider", item, item.name)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <ActionMenu>
+                  <button
+                    onClick={() => {
+                      setProvider({
+                        id: item.id,
+                        name: item.name,
+                        protocol: item.protocol,
+                        baseUrl: item.baseUrl,
+                        apiKey: "",
+                        credentialRef: item.credentialRef ?? "",
+                        enabled: item.enabled,
+                        priority: item.priority,
+                        weight: item.weight,
+                        headersJson: JSON.stringify(
+                          item.headers ?? {},
+                          null,
+                          2,
+                        ),
+                      });
+                      setEditor("provider");
+                    }}
+                  >
+                    <Settings size={16} />
+                    编辑服务商
+                  </button>
+                  <button
+                    className="danger-button"
+                    onClick={() => remove("provider", item, item.name)}
+                  >
+                    <Trash2 size={16} />
+                    删除服务商
+                  </button>
+                </ActionMenu>
               </div>
             </div>
           ))}
@@ -2558,14 +2955,6 @@ function ChannelsPanel() {
     queryKey: ["channels"],
     queryFn: () => center<any[]>("mg", "/v1/channels"),
   });
-  const channelTypes = useQuery({
-    queryKey: ["channel-types"],
-    queryFn: () => center<any[]>("mg", "/v1/channel-types"),
-  });
-  const channelBackends = useQuery({
-    queryKey: ["channel-backends"],
-    queryFn: () => center<any[]>("mg", "/v1/channel-backends"),
-  });
   const routes = useQuery({
     queryKey: ["routes"],
     queryFn: () => center<any[]>("mg", "/v1/routes"),
@@ -2768,39 +3157,6 @@ function ChannelsPanel() {
         <>
           <section className="section-band">
             <div className="section-title">
-              <h3>通道类型</h3>
-              <span>{channelTypes.data?.length ?? 0} 种</span>
-            </div>
-            <div className="channel-list">
-              {(channelTypes.data ?? []).map((item) => (
-                <div className="channel-row" key={item.channel}>
-                  <div>
-                    <strong>{item.channel}</strong>
-                    <span>{item.reason ?? "适配器可用"}</span>
-                  </div>
-                  <span className={`status-pill ${item.availability}`}>
-                    {item.availability}
-                  </span>
-                  <code>{item.capabilities.length} capabilities</code>
-                </div>
-              ))}
-            </div>
-            <div className="model-entity-list">
-              {(channelBackends.data ?? []).map((backend) => (
-                <div className="model-entity-row" key={backend.id}>
-                  <div>
-                    <strong>{backend.id}</strong>
-                    <span>
-                      {backend.implementation} · {backend.availability}
-                    </span>
-                  </div>
-                  <code>{backend.version}</code>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="section-band">
-            <div className="section-title">
               <h3>通道账号</h3>
               <div className="section-actions">
                 <span>{channels.data?.length ?? 0} 个</span>
@@ -2841,90 +3197,78 @@ function ChannelsPanel() {
                       {channel.channel} · {channel.status}
                     </span>
                   </div>
-                  <code>{channel.config?.botOpenId ?? channel.accountId}</code>
+                  <code>
+                    {channel.config?.botOpenId ?? channel.accountId} · 用户授权
+                    {channel.config?.userOAuth?.status ?? "未授权"}
+                  </code>
                   <div className="row-actions">
-                    {channel.channel === "lark" && (
-                      <>
-                        <span className="oauth-state">
-                          用户授权：
-                          {channel.config?.userOAuth?.status ?? "未授权"}
-                          {channel.config?.userOAuth?.missingScopes?.length
-                            ? ` · 缺少 ${channel.config.userOAuth.missingScopes.length} 项权限`
-                            : ""}
-                        </span>
-                        <button
-                          className="secondary"
-                          onClick={() => authorize.mutate(channel.id)}
-                          disabled={authorize.isPending}
-                        >
+                    <button
+                      className="secondary compact-button"
+                      onClick={() => probe.mutate(channel.id)}
+                      disabled={probe.isPending}
+                    >
+                      <Activity size={16} />
+                      检测
+                    </button>
+                    <ActionMenu>
+                      {channel.channel === "lark" && (
+                        <button onClick={() => authorize.mutate(channel.id)}>
                           <KeyRound size={16} />
                           {channel.config?.userOAuth ? "重新授权" : "用户授权"}
                         </button>
-                        {channel.config?.userOAuth?.credentialRef && (
-                          <button
-                            className="icon-button"
-                            title="刷新用户令牌"
-                            onClick={() => refreshOAuth.mutate(channel.id)}
-                            disabled={refreshOAuth.isPending}
-                          >
-                            <RefreshCw size={16} />
-                          </button>
-                        )}
-                      </>
-                    )}
-                    <button
-                      className="icon-button"
-                      title="检测通道"
-                      onClick={() => probe.mutate(channel.id)}
-                    >
-                      <Activity size={16} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      title="编辑通道"
-                      onClick={() => {
-                        const route = (routes.data ?? []).find(
-                          (item) => item.channelAccountId === channel.id,
-                        );
-                        setDraft({
-                          id: channel.id,
-                          name: channel.name,
-                          botId: channel.botId,
-                          appId: channel.accountId,
-                          appSecret: "",
-                          verificationToken: "",
-                          encryptKey: "",
-                          credentialRef: channel.credentialRef ?? "",
-                          config: channel.config ?? {},
-                          configJson: JSON.stringify(
-                            channel.config ?? {},
-                            null,
-                            2,
-                          ),
-                          enabled: channel.enabled,
-                          transport:
-                            channel.config?.transport ?? "long-connection",
-                          requireMention: route?.requireMention ?? true,
-                        });
-                        setEditorOpen(true);
-                      }}
-                    >
-                      <Settings size={16} />
-                    </button>
-                    <button
-                      className="icon-button danger-button"
-                      title="删除通道"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `确认删除通道“${channel.name}”及其专属消息路由？历史消息不会删除。`,
+                      )}
+                      {channel.config?.userOAuth?.credentialRef && (
+                        <button onClick={() => refreshOAuth.mutate(channel.id)}>
+                          <RefreshCw size={16} />
+                          刷新用户令牌
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          const route = (routes.data ?? []).find(
+                            (item) => item.channelAccountId === channel.id,
+                          );
+                          setDraft({
+                            id: channel.id,
+                            name: channel.name,
+                            botId: channel.botId,
+                            appId: channel.accountId,
+                            appSecret: "",
+                            verificationToken: "",
+                            encryptKey: "",
+                            credentialRef: channel.credentialRef ?? "",
+                            config: channel.config ?? {},
+                            configJson: JSON.stringify(
+                              channel.config ?? {},
+                              null,
+                              2,
+                            ),
+                            enabled: channel.enabled,
+                            transport:
+                              channel.config?.transport ?? "long-connection",
+                            requireMention: route?.requireMention ?? true,
+                          });
+                          setEditorOpen(true);
+                        }}
+                      >
+                        <Settings size={16} />
+                        编辑通道
+                      </button>
+                      <button
+                        className="danger-button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `确认删除通道“${channel.name}”及其专属消息路由？历史消息不会删除。`,
+                            )
                           )
-                        )
-                          removeChannel.mutate(channel);
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                            removeChannel.mutate(channel);
+                        }}
+                      >
+                        <Trash2 size={16} />
+                        删除通道
+                      </button>
+                    </ActionMenu>
                   </div>
                 </div>
               ))}
@@ -3700,45 +4044,44 @@ function BotsPanel() {
                     <MessageSquare size={16} />
                     对话
                   </button>
-                  <button
-                    className="secondary"
-                    disabled={!bot.historyBackfillBeta || backfill.isPending}
-                    title={
-                      bot.historyBackfillBeta
-                        ? "从各会话持久游标继续补处理历史消息"
-                        : "请先启用历史补处理 Beta"
-                    }
-                    onClick={() => backfill.mutate(bot)}
-                  >
-                    <History size={16} />
-                    补处理历史
-                  </button>
-                  <button
-                    className="icon-button"
-                    title="编辑"
-                    onClick={() => {
-                      setDraft({ ...empty, ...bot });
-                      setEditingBotId(bot.id);
-                      setEditorOpen(true);
-                    }}
-                  >
-                    <Settings size={16} />
-                  </button>
-                  <button
-                    className="icon-button danger-button"
-                    title={
-                      bot.purpose === "system-assistant"
-                        ? "系统助手不能删除"
-                        : "删除机器人"
-                    }
-                    disabled={bot.purpose === "system-assistant"}
-                    onClick={() => {
-                      if (window.confirm(`确认删除机器人“${bot.name}”？`))
-                        removeBot.mutate(bot);
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <ActionMenu>
+                    <button
+                      onClick={() =>
+                        bot.historyBackfillBeta
+                          ? backfill.mutate(bot)
+                          : window.alert(
+                              "请先在机器人编辑页启用历史补处理 Beta。",
+                            )
+                      }
+                    >
+                      <History size={16} />
+                      补处理历史消息
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDraft({ ...empty, ...bot });
+                        setEditingBotId(bot.id);
+                        setEditorOpen(true);
+                      }}
+                    >
+                      <Settings size={16} />
+                      编辑机器人
+                    </button>
+                    <button
+                      className="danger-button"
+                      onClick={() => {
+                        if (bot.purpose === "system-assistant") {
+                          window.alert("系统助手是平台内置机器人，不能删除。");
+                          return;
+                        }
+                        if (window.confirm(`确认删除机器人“${bot.name}”？`))
+                          removeBot.mutate(bot);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      删除机器人
+                    </button>
+                  </ActionMenu>
                 </div>
               ))}
               {!bots.isLoading && !(bots.data ?? []).length && (
@@ -4181,7 +4524,15 @@ const capabilityDraftPayload = async (text: string) => {
   };
 };
 
-function CapabilitiesPanel({ items }: { items: any[] }) {
+function CapabilitiesPanel({
+  items,
+  view: capabilityView,
+  onViewChange,
+}: {
+  items: any[];
+  view: "list" | "bindings" | "import" | "create";
+  onViewChange: (view: "list" | "bindings" | "import" | "create") => void;
+}) {
   const client = useQueryClient();
   const packages = useQuery({
     queryKey: ["capability-packages"],
@@ -4215,9 +4566,6 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
     credentialRefs: "",
     allowedTriggers: "",
   });
-  const [capabilityView, setCapabilityView] = useState<
-    "list" | "import" | "create"
-  >("list");
   const [bindingEditorOpen, setBindingEditorOpen] = useState(false);
   const [commandDraft, setCommandDraft] = useState({
     name: "",
@@ -4474,15 +4822,23 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
           className={capabilityView === "list" ? "active" : ""}
           role="tab"
           aria-selected={capabilityView === "list"}
-          onClick={() => setCapabilityView("list")}
+          onClick={() => onViewChange("list")}
         >
-          能力清单
+          能力目录
+        </button>
+        <button
+          className={capabilityView === "bindings" ? "active" : ""}
+          role="tab"
+          aria-selected={capabilityView === "bindings"}
+          onClick={() => onViewChange("bindings")}
+        >
+          机器人授权
         </button>
         <button
           className={capabilityView === "import" ? "active" : ""}
           role="tab"
           aria-selected={capabilityView === "import"}
-          onClick={() => setCapabilityView("import")}
+          onClick={() => onViewChange("import")}
         >
           导入与更新
         </button>
@@ -4490,7 +4846,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
           className={capabilityView === "create" ? "active" : ""}
           role="tab"
           aria-selected={capabilityView === "create"}
-          onClick={() => setCapabilityView("create")}
+          onClick={() => onViewChange("create")}
         >
           创建能力
         </button>
@@ -4906,13 +5262,15 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
       <section className="section-band capability-inventory">
         <div className="section-title">
           <h3>
-            {bindingEditorOpen
+            {capabilityView === "bindings" && bindingEditorOpen
               ? binding.id
                 ? "编辑能力授权"
                 : "新增能力授权"
-              : "能力清单"}
+              : capabilityView === "bindings"
+                ? "机器人授权"
+                : "能力目录"}
           </h3>
-          {bindingEditorOpen ? (
+          {capabilityView === "bindings" && bindingEditorOpen ? (
             <button
               className="secondary compact-button"
               onClick={() => {
@@ -4930,14 +5288,9 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
             >
               返回列表
             </button>
-          ) : (
+          ) : capabilityView === "bindings" ? (
             <div className="section-actions">
-              <span>
-                {items.length} 个能力 /{" "}
-                {packages.data?.filter((item) => item.state !== "removed")
-                  .length ?? 0}{" "}
-                个包
-              </span>
+              <span>{bindings.data?.length ?? 0} 条授权</span>
               <button
                 className="primary compact-button"
                 onClick={() => {
@@ -4957,10 +5310,21 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
                 新增授权
               </button>
             </div>
+          ) : (
+            <span>
+              {items.length} 个能力 /{" "}
+              {packages.data?.filter((item) => item.state !== "removed")
+                .length ?? 0}{" "}
+              个能力包
+            </span>
           )}
         </div>
-        {!bindingEditorOpen && (
+        {capabilityView === "list" && (
           <>
+            <div className="subsection-title">
+              <strong>已安装能力包</strong>
+              <span>能力包提供一个或多个可授权能力</span>
+            </div>
             <div className="approval-list">
               {(packages.data ?? [])
                 .filter((item) => item.state !== "removed")
@@ -4990,10 +5354,14 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
                   </div>
                 ))}
             </div>
+            <div className="subsection-title">
+              <strong>可用能力</strong>
+              <span>具体功能、类型、风险和启用状态</span>
+            </div>
             <DataTable items={items} />
           </>
         )}
-        {bindingEditorOpen && (
+        {capabilityView === "bindings" && bindingEditorOpen && (
           <div className="binding-form">
             <select
               value={binding.capabilityId}
@@ -5090,7 +5458,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
             </details>
           </div>
         )}
-        {!bindingEditorOpen && (
+        {capabilityView === "bindings" && !bindingEditorOpen && (
           <div className="approval-list">
             {(bindings.data ?? []).map((item) => (
               <div className="approval-row" key={item.id}>
@@ -5671,6 +6039,7 @@ function SystemAssistant({ navigate }: { navigate: (page: string) => void }) {
         title="系统助手"
         action={<span className="status-pill planned">Beta · 只读</span>}
       />
+      <PageGuide page="assistant" />
       <section className="assistant-workspace" aria-label="系统助手对话">
         <div className="assistant-scope">
           <ShieldCheck size={17} />
@@ -5829,11 +6198,16 @@ function Manual({ navigate }: { navigate: (page: string) => void }) {
   );
 }
 
-function RuntimeExtensionsPanel({ isAdmin }: { isAdmin: boolean }) {
+function RuntimeExtensionsPanel({
+  isAdmin,
+  mode,
+  onModeChange,
+}: {
+  isAdmin: boolean;
+  mode: "providers" | "profiles" | "platform";
+  onModeChange: (mode: "providers" | "profiles" | "platform") => void;
+}) {
   const client = useQueryClient();
-  const [mode, setMode] = useState<"providers" | "profiles" | "platform">(
-    "providers",
-  );
   const [selectedProvider, setSelectedProvider] = useState<any>();
   const [selectedPlatform, setSelectedPlatform] = useState<any>();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -6052,10 +6426,10 @@ function RuntimeExtensionsPanel({ isAdmin }: { isAdmin: boolean }) {
     ],
     canary: [
       ["转为正式", "active"],
-      ["排空", "draining"],
+      ["停止接收新任务", "draining"],
     ],
     active: [
-      ["排空", "draining"],
+      ["停止接收新任务", "draining"],
       ["停用", "disabled"],
     ],
     draining: [
@@ -6082,27 +6456,27 @@ function RuntimeExtensionsPanel({ isAdmin }: { isAdmin: boolean }) {
       >
         <button
           className={mode === "providers" ? "active" : ""}
-          onClick={() => setMode("providers")}
+          onClick={() => onModeChange("providers")}
         >
-          Provider
+          运行时插件
         </button>
         <button
           className={mode === "profiles" ? "active" : ""}
-          onClick={() => setMode("profiles")}
+          onClick={() => onModeChange("profiles")}
         >
-          Runtime Profile
+          运行方案
         </button>
         <button
           className={mode === "platform" ? "active" : ""}
-          onClick={() => setMode("platform")}
+          onClick={() => onModeChange("platform")}
         >
-          平台扩展
+          平台插件
         </button>
       </div>
       {mode === "providers" && !selectedProvider && (
         <section className="section-band">
           <div className="section-title">
-            <h3>Runtime Provider</h3>
+            <h3>运行时插件</h3>
             <span>{providers.data?.length ?? 0} 个已安装实现</span>
           </div>
           <div className="model-entity-list">
@@ -6662,20 +7036,21 @@ function GenericPage({
   me: any;
   navigate: (page: string) => void;
 }) {
-  const pair = endpoint[id],
+  const [baseId, subview] = id.split("/"),
+    pair = endpoint[baseId],
     query = useQuery({
-      queryKey: [id],
+      queryKey: [baseId],
       queryFn: () =>
         pair ? center<any[]>(pair[0], pair[1]) : Promise.resolve([]),
       enabled: !!pair,
     }),
     items = Array.isArray(query.data) ? query.data : [];
-  if (id === "assistant") return <SystemAssistant navigate={navigate} />;
-  if (id === "manual") return <Manual navigate={navigate} />;
+  if (baseId === "assistant") return <SystemAssistant navigate={navigate} />;
+  if (baseId === "manual") return <Manual navigate={navigate} />;
   return (
     <>
       <Header
-        title={nav.find((x) => x.id === id)?.label ?? id}
+        title={nav.find((x) => x.id === baseId)?.label ?? baseId}
         action={
           <button
             className="icon-button"
@@ -6686,31 +7061,55 @@ function GenericPage({
           </button>
         }
       />
-      {id === "models" ? (
-        <ModelsPanel />
-      ) : id === "runtime-extensions" ? (
-        <RuntimeExtensionsPanel isAdmin={me.user.role === "admin"} />
-      ) : id === "bots" ? (
+      <PageGuide page={baseId} />
+      {baseId === "models" ? (
+        <ModelsPanel
+          view={
+            (["providers", "deployments", "policies"].includes(subview)
+              ? subview
+              : "providers") as "providers" | "deployments" | "policies"
+          }
+          onViewChange={(view) => navigate(`models/${view}`)}
+        />
+      ) : baseId === "runtime-extensions" ? (
+        <RuntimeExtensionsPanel
+          isAdmin={me.user.role === "admin"}
+          mode={
+            (["providers", "profiles", "platform"].includes(subview)
+              ? subview
+              : "providers") as "providers" | "profiles" | "platform"
+          }
+          onModeChange={(mode) => navigate(`runtime-extensions/${mode}`)}
+        />
+      ) : baseId === "bots" ? (
         <BotsPanel />
-      ) : id === "channels" ? (
+      ) : baseId === "channels" ? (
         <ChannelsPanel />
-      ) : id === "context" ? (
+      ) : baseId === "context" ? (
         <ContextPanel />
-      ) : id === "schedules" ? (
+      ) : baseId === "schedules" ? (
         <Schedules items={items} refetch={() => void query.refetch()} />
-      ) : id === "browser" ? (
+      ) : baseId === "browser" ? (
         <BrowserPanel />
-      ) : id === "capabilities" ? (
-        <CapabilitiesPanel items={items} />
-      ) : id === "executions" ? (
+      ) : baseId === "capabilities" ? (
+        <CapabilitiesPanel
+          items={items}
+          view={
+            (["list", "bindings", "import", "create"].includes(subview)
+              ? subview
+              : "list") as "list" | "bindings" | "import" | "create"
+          }
+          onViewChange={(view) => navigate(`capabilities/${view}`)}
+        />
+      ) : baseId === "executions" ? (
         <ExecutionsPanel items={items} refetch={() => void query.refetch()} />
-      ) : id === "governance" ? (
+      ) : baseId === "governance" ? (
         <GovernancePanel approverId={me.user.id} />
-      ) : id === "resources" ? (
+      ) : baseId === "resources" ? (
         <ResourcesPanel items={items} />
-      ) : id === "settings" ? (
+      ) : baseId === "settings" ? (
         <SettingsPanel isAdmin={me.user.role === "admin"} />
-      ) : id === "accounts" ? (
+      ) : baseId === "accounts" ? (
         <AccountsPanel />
       ) : (
         <DataTable items={items} />
@@ -6800,8 +7199,10 @@ function AppShell({ me }: { me: any }) {
       ),
   });
   function choose(id: string) {
-    setPage(id);
-    location.hash = id;
+    const item = nav.find((entry) => entry.id === id);
+    const target = item?.children?.length ? `${id}/${item.children[0].id}` : id;
+    setPage(target);
+    location.hash = target;
   }
   return (
     <div className="shell">
@@ -6817,17 +7218,37 @@ function AppShell({ me }: { me: any }) {
           {navGroups.map((group) => (
             <section className="nav-group" key={group.label}>
               <span className="nav-group-label">{group.label}</span>
-              {group.items.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  className={page === id ? "active" : ""}
-                  onClick={() => choose(id)}
-                >
-                  <Icon size={18} />
-                  <span>{label}</span>
-                  <ChevronRight size={15} />
-                </button>
-              ))}
+              {group.items.map(({ id, label, icon: Icon, children }) => {
+                const active = page === id || page.startsWith(`${id}/`);
+                return (
+                  <div className="nav-entry" key={id}>
+                    <button
+                      className={active ? "active" : ""}
+                      onClick={() => choose(id)}
+                    >
+                      <Icon size={18} />
+                      <span>{label}</span>
+                      <ChevronRight size={15} />
+                    </button>
+                    {active && children?.length && (
+                      <div className="nav-children">
+                        {children.map((child) => {
+                          const childPage = `${id}/${child.id}`;
+                          return (
+                            <button
+                              key={child.id}
+                              className={page === childPage ? "active" : ""}
+                              onClick={() => choose(childPage)}
+                            >
+                              <span>{child.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </section>
           ))}
         </nav>
@@ -6870,6 +7291,7 @@ function AppShell({ me }: { me: any }) {
         </div>
       </aside>
       <main className="content">
+        <OperationFeedback />
         <div className="topbar">
           <span className="environment">
             <span className="dot online" />
