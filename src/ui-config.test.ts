@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { navGroups, pageGuides } from "./App";
+import { healthPresentation, navGroups, pageGuides } from "./App";
 
 describe("console information architecture", () => {
   it("provides page guidance for every primary navigation page", () => {
@@ -21,5 +21,15 @@ describe("console information architecture", () => {
       const ids = page.children?.map((child) => child.id) ?? [];
       expect(new Set(ids).size).toBe(ids.length);
     }
+  });
+
+  it("uses explicit user-facing health states", () => {
+    expect(healthPresentation.healthy).toEqual({
+      label: "健康",
+      className: "ready",
+    });
+    expect(healthPresentation.error.label).toBe("异常");
+    expect(healthPresentation.configured.label).toBe("未检测");
+    expect(healthPresentation.disabled.label).toBe("已停用");
   });
 });

@@ -21,6 +21,7 @@
 - 标题明确显示新增或编辑对象。
 - 页面提供浅层的“返回列表”按钮。
 - 高频字段直接展示；低频、协议、范围、重试、安全和原始 JSON 放在“高级配置”折叠区。每个高级区必须标注适用场景，涉及 JSON、凭据或协议参数时还要说明填写来源和安全边界。
+- 保存、新增、授权等提交动作固定在所有配置项之后的独立整行；该行不得混入输入框、选择框、复选框或高级配置，只允许取消、返回等同级动作。
 - 保存成功返回列表；取消不修改持久数据。
 
 同一个中心包含多类实体时，使用左侧二级导航和页内 tab 呈现清晰实体边界；编辑时只显示当前实体详情，其他实体列表暂时隐藏。模型中心区分“服务商 / 模型部署 / 使用策略”，能力中心区分“能力目录 / 机器人授权 / 导入与更新 / 创建能力”，插件控制面区分“运行时插件 / 运行方案 / 平台插件”。
@@ -34,6 +35,8 @@ Every operational page exposes a compact “本页指引” trigger below the ti
 List views preserve one entity per visual row. Cells do not wrap, wide datasets scroll horizontally, and only the primary command stays visible when an entity has many operations. Remaining commands open from the three-dot action menu. Text inputs and selects use an explicit shared 40px height; forms use bottom alignment so labels, inputs, selects, checkboxes and submit buttons share a stable baseline. Related policy options are grouped by purpose, with same-class checkbox choices arranged in one horizontal row when width allows.
 
 Every React Query mutation drives a global progress strip. Successful operations emit a completion notice; failed operations retain the server message. Clicking a disabled action reports its title or required configuration instead of failing silently.
+
+Entities with a real probe contract expose health independently from enabled/lifecycle state. Lists and details label healthy, degraded, failed, disabled and never-probed states explicitly, show the last persisted check timestamp, include latency where the contract provides it, and surface the latest bounded error. The UI must never infer “healthy” merely from enabled or active state.
 
 ## 实现约束
 

@@ -650,6 +650,54 @@ function ActionMenu({ children }: { children: React.ReactNode }) {
   );
 }
 
+function FormActions({ children }: { children: React.ReactNode }) {
+  return <div className="form-actions">{children}</div>;
+}
+
+export const healthPresentation: Record<
+  string,
+  { label: string; className: string }
+> = {
+  healthy: { label: "健康", className: "ready" },
+  ready: { label: "健康", className: "ready" },
+  degraded: { label: "降级", className: "degraded" },
+  error: { label: "异常", className: "failed" },
+  failed: { label: "异常", className: "failed" },
+  unavailable: { label: "不可用", className: "failed" },
+  disabled: { label: "已停用", className: "disabled" },
+  configured: { label: "未检测", className: "pending" },
+};
+
+function HealthSummary({
+  status,
+  checkedAt,
+  error,
+  latencyMs,
+}: {
+  status?: string;
+  checkedAt?: string;
+  error?: string;
+  latencyMs?: number;
+}) {
+  const presentation = healthPresentation[status ?? "configured"] ?? {
+    label: status || "未检测",
+    className: "pending",
+  };
+  return (
+    <div className="health-summary" title={error || undefined}>
+      <span className={`status-pill ${presentation.className}`}>
+        {presentation.label}
+      </span>
+      <small>
+        {checkedAt
+          ? `最后检查 ${new Date(checkedAt).toLocaleString()}${latencyMs == null ? "" : ` · ${latencyMs} ms`}`
+          : "尚未执行健康检查"}
+      </small>
+      {error && <small className="health-error">{error}</small>}
+    </div>
+  );
+}
+
 function OperationFeedback() {
   const mutating = useIsMutating();
   const [message, setMessage] = useState("");
@@ -1391,16 +1439,18 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
                 onChange={(e) => setDraft({ ...draft, prompt: e.target.value })}
               />
             </label>
-            <button
-              className="primary"
-              disabled={
-                !draft.name || !draft.botId || !draft.prompt || save.isPending
-              }
-              onClick={() => save.mutate()}
-            >
-              <CalendarClock size={16} />
-              {draft.id ? "保存修改" : "保存任务"}
-            </button>
+            <FormActions>
+              <button
+                className="primary"
+                disabled={
+                  !draft.name || !draft.botId || !draft.prompt || save.isPending
+                }
+                onClick={() => save.mutate()}
+              >
+                <CalendarClock size={16} />
+                {draft.id ? "保存修改" : "保存任务"}
+              </button>
+            </FormActions>
           </div>
           {save.error && (
             <div className="error form-error">{String(save.error)}</div>
@@ -1903,13 +1953,15 @@ function ContextPanel() {
               </label>
             </div>
           </details>
-          <button
-            className="primary"
-            disabled={!source.name || saveSource.isPending}
-            onClick={() => saveSource.mutate()}
-          >
-            {source.id ? "保存修改" : "添加来源"}
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              disabled={!source.name || saveSource.isPending}
+              onClick={() => saveSource.mutate()}
+            >
+              {source.id ? "保存修改" : "添加来源"}
+            </button>
+          </FormActions>
         </div>
       </section>
       <section className="section-band binding-section">
@@ -2077,15 +2129,17 @@ function ContextPanel() {
               </label>
             </div>
           </details>
-          <button
-            className="primary"
-            disabled={
-              !binding.sourceId || !binding.botId || saveBinding.isPending
-            }
-            onClick={() => saveBinding.mutate()}
-          >
-            {binding.id ? "保存修改" : "添加绑定"}
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              disabled={
+                !binding.sourceId || !binding.botId || saveBinding.isPending
+              }
+              onClick={() => saveBinding.mutate()}
+            >
+              {binding.id ? "保存修改" : "添加绑定"}
+            </button>
+          </FormActions>
         </div>
         {error && <div className="error form-error">{String(error)}</div>}
       </section>
@@ -2377,9 +2431,12 @@ function ModelsPanel({
             <div className="model-entity-row" key={item.id}>
               <div>
                 <strong>{item.name}</strong>
-                <span>
-                  {item.protocol} · {item.enabled ? item.status : "已停用"}
-                </span>
+                <span>{item.protocol}</span>
+                <HealthSummary
+                  status={item.enabled ? item.status : "disabled"}
+                  checkedAt={item.lastProbeAt}
+                  error={item.lastError}
+                />
               </div>
               <code>{item.baseUrl}</code>
               <div className="row-actions">
@@ -2551,15 +2608,17 @@ function ModelsPanel({
               </label>
             </div>
           </details>
-          <button
-            className="primary"
-            onClick={() => saveProvider.mutate()}
-            disabled={
-              !provider.name || !provider.baseUrl || saveProvider.isPending
-            }
-          >
-            {provider.id ? "保存修改" : "添加 Provider"}
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              onClick={() => saveProvider.mutate()}
+              disabled={
+                !provider.name || !provider.baseUrl || saveProvider.isPending
+              }
+            >
+              {provider.id ? "保存修改" : "添加 Provider"}
+            </button>
+          </FormActions>
         </div>
       </section>
       <section className="section-band deployment-section">
@@ -2803,18 +2862,20 @@ function ModelsPanel({
               </label>
             </div>
           </details>
-          <button
-            className="primary"
-            onClick={() => saveDeployment.mutate()}
-            disabled={
-              !deployment.providerId ||
-              !deployment.modelId ||
-              !deployment.name ||
-              saveDeployment.isPending
-            }
-          >
-            {deployment.id ? "保存修改" : "添加模型"}
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              onClick={() => saveDeployment.mutate()}
+              disabled={
+                !deployment.providerId ||
+                !deployment.modelId ||
+                !deployment.name ||
+                saveDeployment.isPending
+              }
+            >
+              {deployment.id ? "保存修改" : "添加模型"}
+            </button>
+          </FormActions>
         </div>
       </section>
       <section className="section-band policy-section">
@@ -2999,17 +3060,19 @@ function ModelsPanel({
               </label>
             )}
           </div>
-          <button
-            className="primary"
-            onClick={() => savePolicy.mutate()}
-            disabled={
-              !policy.name ||
-              !policy.deploymentIds.length ||
-              savePolicy.isPending
-            }
-          >
-            {policy.id ? "保存修改" : "添加策略"}
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              onClick={() => savePolicy.mutate()}
+              disabled={
+                !policy.name ||
+                !policy.deploymentIds.length ||
+                savePolicy.isPending
+              }
+            >
+              {policy.id ? "保存修改" : "添加策略"}
+            </button>
+          </FormActions>
         </div>
         {modelError && (
           <div className="error form-error">{String(modelError)}</div>
@@ -3266,9 +3329,12 @@ function ChannelsPanel() {
                 <div className="channel-row" key={channel.id}>
                   <div>
                     <strong>{channel.name}</strong>
-                    <span>
-                      {channel.channel} · {channel.status}
-                    </span>
+                    <span>{channel.channel}</span>
+                    <HealthSummary
+                      status={channel.enabled ? channel.status : "disabled"}
+                      checkedAt={channel.lastHeartbeatAt}
+                      error={channel.lastError}
+                    />
                   </div>
                   <code>
                     {channel.config?.botOpenId ?? channel.accountId} · 用户授权
@@ -3486,20 +3552,22 @@ function ChannelsPanel() {
                 </label>
               </div>
             </details>
-            <button
-              className="primary"
-              disabled={
-                !draft.name ||
-                !draft.botId ||
-                !draft.appId ||
-                (!draft.id && !draft.appSecret) ||
-                save.isPending
-              }
-              onClick={() => save.mutate()}
-            >
-              <Radio size={16} />
-              {draft.id ? "保存修改" : "保存通道"}
-            </button>
+            <FormActions>
+              <button
+                className="primary"
+                disabled={
+                  !draft.name ||
+                  !draft.botId ||
+                  !draft.appId ||
+                  (!draft.id && !draft.appSecret) ||
+                  save.isPending
+                }
+                onClick={() => save.mutate()}
+              >
+                <Radio size={16} />
+                {draft.id ? "保存修改" : "保存通道"}
+              </button>
+            </FormActions>
           </div>
           {save.error && (
             <div className="error form-error">{String(save.error)}</div>
@@ -3863,19 +3931,21 @@ function AccountsPanel() {
             <option value="operator">运维</option>
             <option value="admin">管理员</option>
           </select>
-          <button
-            className="primary"
-            disabled={
-              create.isPending ||
-              !draft.username ||
-              !draft.email ||
-              draft.password.length < 12
-            }
-            onClick={() => create.mutate()}
-          >
-            <UserPlus size={16} />
-            创建账号
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              disabled={
+                create.isPending ||
+                !draft.username ||
+                !draft.email ||
+                draft.password.length < 12
+              }
+              onClick={() => create.mutate()}
+            >
+              <UserPlus size={16} />
+              创建账号
+            </button>
+          </FormActions>
         </div>
         {create.error && (
           <div className="error form-error">{String(create.error)}</div>
@@ -4481,14 +4551,16 @@ function BotsPanel() {
               />
               历史补处理 Beta
             </label>
-            <button
-              className="primary"
-              disabled={!draft.id || !draft.name || save.isPending}
-              onClick={() => save.mutate()}
-            >
-              <Bot size={16} />
-              {editingBotId ? "保存修改" : "保存机器人"}
-            </button>
+            <FormActions>
+              <button
+                className="primary"
+                disabled={!draft.id || !draft.name || save.isPending}
+                onClick={() => save.mutate()}
+              >
+                <Bot size={16} />
+                {editingBotId ? "保存修改" : "保存机器人"}
+              </button>
+            </FormActions>
           </div>
           {save.error && (
             <div className="error form-error">{String(save.error)}</div>
@@ -5217,20 +5289,22 @@ function CapabilitiesPanel({
               }
             />
           </label>
-          <button
-            className="primary"
-            disabled={
-              !commandDraft.name.trim() ||
-              !commandDraft.command.trim().startsWith("/") ||
-              !commandDraft.template.trim() ||
-              !commandDraft.botId ||
-              createCommand.isPending
-            }
-            onClick={() => createCommand.mutate()}
-          >
-            <Route size={16} />
-            创建并绑定
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              disabled={
+                !commandDraft.name.trim() ||
+                !commandDraft.command.trim().startsWith("/") ||
+                !commandDraft.template.trim() ||
+                !commandDraft.botId ||
+                createCommand.isPending
+              }
+              onClick={() => createCommand.mutate()}
+            >
+              <Route size={16} />
+              创建并绑定
+            </button>
+          </FormActions>
         </div>
         {createCommand.error && (
           <div className="error form-error">{String(createCommand.error)}</div>
@@ -5466,16 +5540,6 @@ function CapabilitiesPanel({
                 </option>
               ))}
             </select>
-            <button
-              className="primary"
-              disabled={
-                !binding.capabilityId || !binding.botId || bind.isPending
-              }
-              onClick={() => bind.mutate()}
-            >
-              <Route size={16} />
-              {binding.id ? "保存绑定" : "授权给机器人"}
-            </button>
             <label className="checkbox-line">
               <input
                 type="checkbox"
@@ -5532,6 +5596,18 @@ function CapabilitiesPanel({
                 </label>
               </div>
             </details>
+            <FormActions>
+              <button
+                className="primary"
+                disabled={
+                  !binding.capabilityId || !binding.botId || bind.isPending
+                }
+                onClick={() => bind.mutate()}
+              >
+                <Route size={16} />
+                {binding.id ? "保存绑定" : "授权给机器人"}
+              </button>
+            </FormActions>
           </div>
         )}
         {capabilityView === "bindings" && !bindingEditorOpen && (
@@ -5617,14 +5693,16 @@ function CapabilitiesPanel({
                 setEditing({ ...editing, content: event.target.value })
               }
             />
-            <button
-              className="primary"
-              disabled={saveEdit.isPending}
-              onClick={() => saveEdit.mutate()}
-            >
-              <Check size={16} />
-              保存并使用编辑版
-            </button>
+            <FormActions>
+              <button
+                className="primary"
+                disabled={saveEdit.isPending}
+                onClick={() => saveEdit.mutate()}
+              >
+                <Check size={16} />
+                保存并使用编辑版
+              </button>
+            </FormActions>
           </section>
         </div>
       )}
@@ -6013,14 +6091,16 @@ function ResourcesPanel({ items }: { items: any[] }) {
             placeholder="bot-a, bot-b"
             onChange={(event) => setAcl({ ...acl, botIds: event.target.value })}
           />
-          <button
-            className="primary"
-            disabled={!acl.resourceId || updateAcl.isPending}
-            onClick={() => updateAcl.mutate()}
-          >
-            <ShieldCheck size={16} />
-            保存授权
-          </button>
+          <FormActions>
+            <button
+              className="primary"
+              disabled={!acl.resourceId || updateAcl.isPending}
+              onClick={() => updateAcl.mutate()}
+            >
+              <ShieldCheck size={16} />
+              保存授权
+            </button>
+          </FormActions>
         </div>
       </section>
       <section className="section-band">
@@ -6400,7 +6480,14 @@ function RuntimeExtensionsPanel({
           body: "{}",
         },
       ),
-    onSuccess: refresh,
+    onSuccess: (lastProbe: any) => {
+      setSelectedProvider((current: any) =>
+        current
+          ? { ...current, lastProbe, updatedAt: lastProbe.checkedAt }
+          : current,
+      );
+      refresh();
+    },
   });
   const lifecycle = useMutation({
     mutationFn: ({ id, state }: { id: string; state: string }) =>
@@ -6421,7 +6508,19 @@ function RuntimeExtensionsPanel({
         `/v1/extensions/${encodeURIComponent(item.descriptor.providerId)}/probe`,
         { method: "POST", body: "{}" },
       ),
-    onSuccess: refresh,
+    onSuccess: (lastProbe: any, item) => {
+      setSelectedPlatform((current: any) =>
+        current
+          ? {
+              ...current,
+              lastProbe,
+              center: item.center,
+              updatedAt: lastProbe.checkedAt,
+            }
+          : current,
+      );
+      refresh();
+    },
   });
   const platformLifecycle = useMutation({
     mutationFn: ({ item, state }: { item: any; state: string }) =>
@@ -6567,6 +6666,12 @@ function RuntimeExtensionsPanel({
                   <span>
                     {record.descriptor.providerId} · {record.descriptor.version}
                   </span>
+                  <HealthSummary
+                    status={record.lastProbe?.status}
+                    checkedAt={record.lastProbe?.checkedAt}
+                    error={record.lastProbe?.reason}
+                    latencyMs={record.lastProbe?.latencyMs}
+                  />
                 </div>
                 <span
                   className={`status-pill ${record.lifecycleState === "active" ? "ready" : "degraded"}`}
@@ -6638,10 +6743,13 @@ function RuntimeExtensionsPanel({
               <strong>{selectedProvider.descriptor.contractVersion}</strong>
             </div>
             <div>
-              <span>最近探针</span>
-              <strong>
-                {selectedProvider.lastProbe?.status ?? "尚未检测"}
-              </strong>
+              <span>健康状态</span>
+              <HealthSummary
+                status={selectedProvider.lastProbe?.status}
+                checkedAt={selectedProvider.lastProbe?.checkedAt}
+                error={selectedProvider.lastProbe?.reason}
+                latencyMs={selectedProvider.lastProbe?.latencyMs}
+              />
             </div>
           </div>
           <div className="detail-columns">
@@ -6922,18 +7030,20 @@ function RuntimeExtensionsPanel({
                 </fieldset>
               </div>
             </details>
-            <button
-              className="primary"
-              disabled={
-                !profile.name ||
-                !profile.runtimeProviderId ||
-                saveProfile.isPending
-              }
-              onClick={() => saveProfile.mutate()}
-            >
-              <Check size={16} />
-              保存 Profile
-            </button>
+            <FormActions>
+              <button
+                className="primary"
+                disabled={
+                  !profile.name ||
+                  !profile.runtimeProviderId ||
+                  saveProfile.isPending
+                }
+                onClick={() => saveProfile.mutate()}
+              >
+                <Check size={16} />
+                保存 Profile
+              </button>
+            </FormActions>
           </div>
         </section>
       )}
@@ -6960,6 +7070,11 @@ function RuntimeExtensionsPanel({
                     {record.descriptor.providerId} · {record.descriptor.family}
                     {record.generation ? ` · 第 ${record.generation} 代` : ""}
                   </span>
+                  <HealthSummary
+                    status={record.lastProbe?.status}
+                    checkedAt={record.lastProbe?.checkedAt}
+                    error={record.lastProbe?.reason}
+                  />
                 </div>
                 <span
                   className={`status-pill ${record.lifecycleState === "active" ? "ready" : "degraded"}`}
@@ -7060,10 +7175,12 @@ function RuntimeExtensionsPanel({
               </strong>
             </div>
             <div>
-              <span>最近探针</span>
-              <strong>
-                {selectedPlatform.lastProbe?.status ?? "尚未检测"}
-              </strong>
+              <span>健康状态</span>
+              <HealthSummary
+                status={selectedPlatform.lastProbe?.status}
+                checkedAt={selectedPlatform.lastProbe?.checkedAt}
+                error={selectedPlatform.lastProbe?.reason}
+              />
             </div>
           </div>
           <div className="detail-columns">

@@ -817,6 +817,17 @@ progress {
   margin: 10px 0 0;
   max-width: 760px;
 }
+.form-actions {
+  grid-column: 1 / -1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid #e4ebe7;
+}
 .advanced-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1292,6 +1303,30 @@ progress {
   border-color: #d8c58d;
   background: #fff9e8;
   color: #775d13 !important;
+}
+.status-pill.disabled {
+  border-color: #d2d8d4;
+  background: #f1f3f2;
+  color: #68736d !important;
+}
+.health-summary {
+  min-width: 0;
+  display: flex !important;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #68756d;
+}
+.health-summary small {
+  min-width: 0;
+  color: #68756d;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.health-summary .health-error {
+  flex-basis: 100%;
+  max-width: 360px;
+  color: #a3312c;
 }
 .detail-facts {
   display: grid;
@@ -1876,6 +1911,16 @@ progress {
   .advanced-grid .wide-field {
     grid-column: auto;
   }
+  .form-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .form-actions > button {
+    width: 100%;
+  }
+  .health-summary {
+    align-items: flex-start;
+  }
   .assistant-message {
     width: 100%;
   }
@@ -2076,14 +2121,16 @@ html[data-theme="dark"] .action-menu button {
   color: #dfe7e2;
 }
 html[data-theme="dark"] .page-guide-grid,
-html[data-theme="dark"] .page-guide-grid section {
+html[data-theme="dark"] .page-guide-grid section,
+html[data-theme="dark"] .form-actions {
   border-color: #2c3831;
 }
 html[data-theme="dark"] .page-guide-grid ul,
 html[data-theme="dark"] .guide-intro,
 html[data-theme="dark"] .advanced-description,
 html[data-theme="dark"] .field-help,
-html[data-theme="dark"] .advanced-config summary small {
+html[data-theme="dark"] .advanced-config summary small,
+html[data-theme="dark"] .health-summary small {
   color: #aab6ae;
 }
 html[data-theme="dark"] .action-menu button:hover {
