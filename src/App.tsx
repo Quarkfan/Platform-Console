@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Archive,
+  BookOpen,
   Bot,
   Boxes,
   Brain,
@@ -41,6 +42,7 @@ import { randomUuid } from "./ids";
 type Nav = { id: string; label: string; icon: any };
 const nav: Nav[] = [
   { id: "overview", label: "运行概览", icon: Gauge },
+  { id: "manual", label: "使用手册", icon: BookOpen },
   { id: "assistant", label: "系统助手", icon: CircleHelp },
   { id: "bots", label: "机器人", icon: Bot },
   { id: "channels", label: "通道", icon: Radio },
@@ -68,6 +70,198 @@ const endpoint: Record<string, [string, string]> = {
   resources: ["resource", "/v1/resources"],
   governance: ["governance", "/v1/approvals"],
 };
+type ManualGuide = {
+  title: string;
+  summary: string;
+  steps: string[];
+  page: string;
+  action: string;
+};
+type ManualSection = {
+  id: string;
+  label: string;
+  guides: ManualGuide[];
+};
+const manualSections: ManualSection[] = [
+  {
+    id: "start",
+    label: "快速开始",
+    guides: [
+      {
+        title: "确认平台可以工作",
+        summary: "先确认所有中心都已就绪，再开始配置业务。",
+        steps: [
+          "打开运行概览并刷新状态。",
+          "确认每项服务都显示“已就绪”；异常项先生成排障包。",
+          "首次登录后立即修改初始密码。",
+        ],
+        page: "overview",
+        action: "查看运行概览",
+      },
+      {
+        title: "接入第一个模型",
+        summary: "机器人需要 Provider、模型部署和使用策略三层配置。",
+        steps: [
+          "添加 Model Provider，填写协议、Base URL 和 API Key。",
+          "在模型部署中选择 Provider，填写平台实际使用的模型 ID。",
+          "创建固定、轮流或随机策略；多模型场景建议开启失败切换。",
+        ],
+        page: "models",
+        action: "配置模型",
+      },
+      {
+        title: "创建并测试机器人",
+        summary: "先在控制台完成一次直接对话，再连接外部通道。",
+        steps: [
+          "填写唯一 Bot ID、名称、Runtime 和模型策略。",
+          "按职责撰写系统提示词，并保存机器人。",
+          "点击机器人列表中的“对话”，发送一条测试消息。",
+        ],
+        page: "bots",
+        action: "创建机器人",
+      },
+      {
+        title: "连接飞书通道",
+        summary: "每个通道账号绑定到一个机器人，凭据由治理中心加密保存。",
+        steps: [
+          "准备飞书应用的 App ID、App Secret，并选择已测试的机器人。",
+          "优先使用长连接；群聊场景保留“仅在 @ 时响应”。",
+          "保存后执行通道检测；需要读取用户数据时再完成用户授权。",
+        ],
+        page: "channels",
+        action: "连接通道",
+      },
+    ],
+  },
+  {
+    id: "operate",
+    label: "日常操作",
+    guides: [
+      {
+        title: "添加知识与记忆来源",
+        summary: "上下文页面管理知识来源、绑定关系和召回范围。",
+        steps: [
+          "先上传或确认资源，再创建上下文来源。",
+          "把来源绑定到需要使用它的机器人。",
+          "通过检索结果确认内容已入库且范围正确。",
+        ],
+        page: "context",
+        action: "管理上下文",
+      },
+      {
+        title: "安装和授权能力",
+        summary: "Skill、工作流、命令、浏览器和媒体能力统一在能力页面管理。",
+        steps: [
+          "导入前查看来源、权限和风险等级。",
+          "遇到同名冲突时选择新版本、旧版本或手动编辑。",
+          "启用能力并绑定到指定机器人后再执行测试。",
+        ],
+        page: "capabilities",
+        action: "管理能力",
+      },
+      {
+        title: "创建和观察定时任务",
+        summary: "任务保存后可以立即运行，并持续查看上下次时间和运行日志。",
+        steps: [
+          "选择每日、每周、间隔或 Cron，并核对时区。",
+          "填写目标机器人和完整任务 Prompt。",
+          "先点立即运行验证，再确认下次执行时间和最近运行结果。",
+        ],
+        page: "schedules",
+        action: "管理调度",
+      },
+      {
+        title: "使用浏览器与媒体处理",
+        summary: "浏览器自动化和 FFmpeg 任务都会产生可审计的执行与资源记录。",
+        steps: [
+          "浏览器任务必须填写目标地址和允许访问的域名。",
+          "登录、下载、提交等敏感动作可能需要治理审批。",
+          "生成的截图、视频、音频和诊断文件在资源页面查看。",
+        ],
+        page: "browser",
+        action: "打开浏览器任务",
+      },
+    ],
+  },
+  {
+    id: "troubleshoot",
+    label: "故障排查",
+    guides: [
+      {
+        title: "机器人没有回复",
+        summary: "按通道、消息、执行、模型的顺序定位，最快找到中断位置。",
+        steps: [
+          "确认机器人启用、通道检测通过，群聊消息是否正确 @。",
+          "在消息页面确认消息已进入，在执行页面确认任务已创建。",
+          "执行失败时检查模型策略、审批状态和相关中心日志。",
+        ],
+        page: "messages",
+        action: "检查消息",
+      },
+      {
+        title: "定时任务没有运行",
+        summary: "不要盲目等待，直接检查启用状态、下次时间和运行记录。",
+        steps: [
+          "核对任务时区、表达式、启用状态和下次执行时间。",
+          "点击立即运行，确认机器人和 Prompt 本身能够执行。",
+          "查看任务日志；执行已创建但失败时转到执行页面继续追踪。",
+        ],
+        page: "schedules",
+        action: "检查调度",
+      },
+      {
+        title: "任务等待审批或外部登录",
+        summary: "高风险动作会停在检查点，批准后可以从原位置继续。",
+        steps: [
+          "在治理页面查看待处理审批、风险和请求来源。",
+          "确认动作和目标正确后批准；不明确的请求应拒绝。",
+          "浏览器外部登录完成后返回原任务继续运行。",
+        ],
+        page: "governance",
+        action: "查看治理",
+      },
+      {
+        title: "生成排障包",
+        summary: "需要支持时导出脱敏日志包，不必截图或复制大量错误信息。",
+        steps: [
+          "点击侧边栏底部的“一键排障”。",
+          "等待浏览器下载 ZIP 文件。",
+          "排障包只含受限运行元数据；发送前仍应确认接收对象。",
+        ],
+        page: "overview",
+        action: "返回概览",
+      },
+    ],
+  },
+  {
+    id: "security",
+    label: "安全与维护",
+    guides: [
+      {
+        title: "账号与权限",
+        summary: "管理员负责配置与账号，操作员执行日常工作，只读账号用于查看。",
+        steps: [
+          "为每位使用者创建独立账号，不共享管理员密码。",
+          "按职责授予 admin、operator 或 viewer。",
+          "人员离开或职责变化时立即停用账号。",
+        ],
+        page: "accounts",
+        action: "管理账号",
+      },
+      {
+        title: "配置迁移与备份",
+        summary: "业务配置可以导出，服务器数据和密钥需要按运维流程单独备份。",
+        steps: [
+          "在系统设置导出配置包，导出内容不包含密钥。",
+          "导入前先预检；系统会下载当前配置作为回退副本。",
+          "服务器升级前执行完整备份，并验证备份校验和。",
+        ],
+        page: "settings",
+        action: "打开系统设置",
+      },
+    ],
+  },
+];
 function Login() {
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState(""),
@@ -820,6 +1014,12 @@ function ModelsPanel() {
     baseUrl: "",
     apiKey: "",
   });
+  const [deployment, setDeployment] = useState({
+    providerId: "",
+    modelId: "",
+    name: "",
+    kind: "chat",
+  });
   const [policy, setPolicy] = useState({
     name: "",
     mode: "round-robin",
@@ -868,6 +1068,22 @@ function ModelsPanel() {
       }),
     onSuccess: () =>
       void client.invalidateQueries({ queryKey: ["model-policies"] }),
+  });
+  const addDeployment = useMutation({
+    mutationFn: () =>
+      center("mh", "/v1/models", {
+        method: "POST",
+        body: JSON.stringify(deployment),
+      }),
+    onSuccess: () => {
+      setDeployment({
+        providerId: "",
+        modelId: "",
+        name: "",
+        kind: "chat",
+      });
+      void client.invalidateQueries({ queryKey: ["model-deployments"] });
+    },
   });
   return (
     <div className="stack">
@@ -925,6 +1141,74 @@ function ModelsPanel() {
           <span>{deployments.data?.length ?? 0} 个</span>
         </div>
         <DataTable items={deployments.data ?? []} />
+        <div className="model-form">
+          <select
+            aria-label="模型所属 Provider"
+            value={deployment.providerId}
+            onChange={(event) =>
+              setDeployment({
+                ...deployment,
+                providerId: event.target.value,
+              })
+            }
+          >
+            <option value="">选择 Provider</option>
+            {(providers.data ?? []).map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <input
+            aria-label="模型 ID"
+            placeholder="模型 ID，例如 gpt-5-mini"
+            value={deployment.modelId}
+            onChange={(event) =>
+              setDeployment({ ...deployment, modelId: event.target.value })
+            }
+          />
+          <input
+            aria-label="模型显示名称"
+            placeholder="显示名称"
+            value={deployment.name}
+            onChange={(event) =>
+              setDeployment({ ...deployment, name: event.target.value })
+            }
+          />
+          <select
+            aria-label="模型类型"
+            value={deployment.kind}
+            onChange={(event) =>
+              setDeployment({ ...deployment, kind: event.target.value })
+            }
+          >
+            <option value="chat">对话</option>
+            <option value="completion">文本补全</option>
+            <option value="embedding">向量嵌入</option>
+            <option value="rerank">重排</option>
+            <option value="vision">视觉理解</option>
+            <option value="image-generation">图像生成</option>
+            <option value="image-edit">图像编辑</option>
+            <option value="speech-to-text">语音转文字</option>
+            <option value="text-to-speech">文字转语音</option>
+            <option value="video-generation">视频生成</option>
+          </select>
+          <button
+            className="primary"
+            onClick={() => addDeployment.mutate()}
+            disabled={
+              !deployment.providerId ||
+              !deployment.modelId ||
+              !deployment.name ||
+              addDeployment.isPending
+            }
+          >
+            添加部署
+          </button>
+        </div>
+        {addDeployment.error && (
+          <div className="error form-error">{String(addDeployment.error)}</div>
+        )}
       </section>
       <section className="section-band">
         <div className="section-title">
@@ -3516,6 +3800,101 @@ function SystemAssistant({ navigate }: { navigate: (page: string) => void }) {
   );
 }
 
+function Manual({ navigate }: { navigate: (page: string) => void }) {
+  const [sectionId, setSectionId] = useState<string>(manualSections[0].id);
+  const [search, setSearch] = useState("");
+  const normalized = search.trim().toLocaleLowerCase();
+  const selected = manualSections.find((section) => section.id === sectionId)!;
+  const guides = (normalized
+    ? manualSections.flatMap((section) => section.guides)
+    : selected.guides
+  ).filter((guide) =>
+    [guide.title, guide.summary, ...guide.steps]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(normalized),
+  );
+  return (
+    <>
+      <Header title="使用手册" />
+      <div className="manual-toolbar">
+        <div className="manual-search">
+          <Search size={17} />
+          <input
+            aria-label="搜索使用手册"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索配置、调度、排障或安全"
+          />
+          {search && (
+            <button
+              className="icon-button"
+              title="清除搜索"
+              onClick={() => setSearch("")}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        <div className="manual-tabs" role="tablist" aria-label="手册分类">
+          {manualSections.map((section) => (
+            <button
+              key={section.id}
+              role="tab"
+              aria-selected={!normalized && section.id === sectionId}
+              className={!normalized && section.id === sectionId ? "active" : ""}
+              onClick={() => {
+                setSearch("");
+                setSectionId(section.id);
+              }}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <section className="section-band manual-intro">
+        <div>
+          <BookOpen size={22} />
+          <div>
+            <h3>{normalized ? `“${search.trim()}”的搜索结果` : selected.label}</h3>
+            <p>
+              {normalized
+                ? `找到 ${guides.length} 个相关操作。`
+                : sectionId === "start"
+                  ? "建议依次完成运行检查、模型、机器人和通道配置。"
+                  : "按目标选择操作，完成后可直接跳转到对应页面。"}
+            </p>
+          </div>
+        </div>
+      </section>
+      <div className="manual-guide-list">
+        {guides.map((guide, index) => (
+          <section className="manual-guide" key={guide.title}>
+            <div className="manual-guide-index">
+              {String(index + 1).padStart(2, "0")}
+            </div>
+            <div className="manual-guide-copy">
+              <h3>{guide.title}</h3>
+              <p>{guide.summary}</p>
+              <ol>
+                {guide.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            </div>
+            <button className="secondary" onClick={() => navigate(guide.page)}>
+              {guide.action}
+              <ChevronRight size={16} />
+            </button>
+          </section>
+        ))}
+        {!guides.length && <div className="empty">没有找到相关手册内容</div>}
+      </div>
+    </>
+  );
+}
+
 function GenericPage({
   id,
   me,
@@ -3534,6 +3913,7 @@ function GenericPage({
     }),
     items = Array.isArray(query.data) ? query.data : [];
   if (id === "assistant") return <SystemAssistant navigate={navigate} />;
+  if (id === "manual") return <Manual navigate={navigate} />;
   return (
     <>
       <Header

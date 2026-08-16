@@ -886,6 +886,12 @@ progress {
   gap: 8px;
   margin-top: 12px;
 }
+.model-form {
+  display: grid;
+  grid-template-columns: 1.1fr 1.3fr 1.1fr 160px auto;
+  gap: 8px;
+  margin-top: 12px;
+}
 .policy-form {
   display: grid;
   grid-template-columns: 1fr 180px 220px auto;
@@ -908,6 +914,119 @@ progress {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
+}
+.manual-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.manual-search {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.manual-search > svg {
+  position: absolute;
+  left: 12px;
+  color: #68756d;
+  pointer-events: none;
+}
+.manual-search input {
+  padding-left: 38px;
+  min-height: 40px;
+}
+.manual-search .icon-button {
+  margin-left: 8px;
+}
+.manual-tabs {
+  display: inline-flex;
+  border: 1px solid #cbd6cf;
+  background: #fff;
+  padding: 3px;
+  border-radius: 6px;
+}
+.manual-tabs button {
+  min-height: 32px;
+  padding: 0 11px;
+  color: #5f6d64;
+  background: transparent;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.manual-tabs button.active {
+  color: #fff;
+  background: #16794a;
+}
+.manual-intro > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.manual-intro svg {
+  color: #16794a;
+  margin-top: 1px;
+}
+.manual-intro h3,
+.manual-intro p {
+  margin: 0;
+}
+.manual-intro p {
+  color: #68756d;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 5px;
+}
+.manual-guide-list {
+  margin-top: 12px;
+  border: 1px solid #dce4df;
+  background: #fff;
+}
+.manual-guide {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 18px;
+  border-bottom: 1px solid #edf1ee;
+}
+.manual-guide:last-child {
+  border-bottom: 0;
+}
+.manual-guide-index {
+  color: #16794a;
+  font-size: 13px;
+  font-weight: 800;
+  padding-top: 2px;
+}
+.manual-guide-copy {
+  min-width: 0;
+}
+.manual-guide-copy h3,
+.manual-guide-copy p {
+  margin: 0;
+}
+.manual-guide-copy h3 {
+  font-size: 15px;
+}
+.manual-guide-copy p {
+  color: #66736b;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 5px;
+}
+.manual-guide-copy ol {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: #39473f;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.manual-guide > .secondary {
+  align-self: center;
+  white-space: nowrap;
 }
 .settings-grid {
   display: grid;
@@ -1150,6 +1269,7 @@ progress {
     grid-template-columns: 1fr;
   }
   .inline-form,
+  .model-form,
   .policy-form,
   .skill-import-row,
   .git-skill-form,
@@ -1176,6 +1296,23 @@ progress {
     grid-template-columns: minmax(0, 1fr);
   }
   .assistant-message {
+    width: 100%;
+  }
+  .manual-toolbar,
+  .manual-guide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .manual-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .manual-tabs button {
+    flex: 1 0 auto;
+  }
+  .manual-guide-index {
+    display: none;
+  }
+  .manual-guide > .secondary {
     width: 100%;
   }
   .skill-import-row .primary,
@@ -1290,9 +1427,18 @@ html[data-theme="dark"] .table-wrap,
 html[data-theme="dark"] .empty,
 html[data-theme="dark"] .schedule-list,
 html[data-theme="dark"] .tool-band,
-html[data-theme="dark"] .section-band {
+html[data-theme="dark"] .section-band,
+html[data-theme="dark"] .manual-tabs,
+html[data-theme="dark"] .manual-guide-list {
   background: #19221d;
   border-color: #2c3831;
+}
+html[data-theme="dark"] .manual-guide {
+  border-color: #2c3831;
+}
+html[data-theme="dark"] .manual-guide-copy h3,
+html[data-theme="dark"] .manual-guide-copy ol {
+  color: #dfe7e2;
 }
 html[data-theme="dark"] .run-dialog,
 html[data-theme="dark"] .run-entry pre {
