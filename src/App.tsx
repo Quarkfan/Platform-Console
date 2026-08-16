@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Play,
   Pause,
+  Plus,
   Radio,
   RefreshCw,
   RotateCcw,
@@ -40,23 +41,44 @@ import { authClient } from "./auth-client";
 import { api, center } from "./api";
 import { randomUuid } from "./ids";
 type Nav = { id: string; label: string; icon: any };
-const nav: Nav[] = [
-  { id: "overview", label: "运行概览", icon: Gauge },
-  { id: "assistant", label: "系统助手", icon: CircleHelp },
-  { id: "bots", label: "机器人", icon: Bot },
-  { id: "channels", label: "通道", icon: Radio },
-  { id: "messages", label: "消息", icon: MessageSquare },
-  { id: "context", label: "上下文", icon: Brain },
-  { id: "models", label: "模型", icon: Sparkles },
-  { id: "capabilities", label: "能力", icon: Boxes },
-  { id: "executions", label: "执行", icon: Activity },
-  { id: "schedules", label: "调度", icon: CalendarClock },
-  { id: "resources", label: "资源", icon: Database },
-  { id: "browser", label: "浏览器", icon: Search },
-  { id: "governance", label: "治理", icon: ShieldCheck },
-  { id: "accounts", label: "账号", icon: CircleUser },
-  { id: "settings", label: "系统设置", icon: Settings },
+const navGroups: Array<{ label: string; items: Nav[] }> = [
+  {
+    label: "工作台",
+    items: [
+      { id: "overview", label: "运行概览", icon: Gauge },
+      { id: "assistant", label: "系统助手", icon: CircleHelp },
+    ],
+  },
+  {
+    label: "配置中心",
+    items: [
+      { id: "bots", label: "机器人", icon: Bot },
+      { id: "channels", label: "通道", icon: Radio },
+      { id: "context", label: "上下文", icon: Brain },
+      { id: "models", label: "模型", icon: Sparkles },
+      { id: "capabilities", label: "能力", icon: Boxes },
+    ],
+  },
+  {
+    label: "运行与运维",
+    items: [
+      { id: "messages", label: "消息", icon: MessageSquare },
+      { id: "executions", label: "执行", icon: Activity },
+      { id: "schedules", label: "调度", icon: CalendarClock },
+      { id: "resources", label: "资源", icon: Database },
+      { id: "browser", label: "浏览器", icon: Search },
+      { id: "governance", label: "治理", icon: ShieldCheck },
+    ],
+  },
+  {
+    label: "系统管理",
+    items: [
+      { id: "accounts", label: "账号", icon: CircleUser },
+      { id: "settings", label: "系统设置", icon: Settings },
+    ],
+  },
 ];
+const nav = navGroups.flatMap((group) => group.items);
 const endpoint: Record<string, [string, string]> = {
   bots: ["runtime", "/v1/bots"],
   channels: ["mg", "/v1/channels"],
@@ -572,6 +594,7 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
     maxBackfill: 100,
   };
   const [draft, setDraft] = useState(emptyDraft);
+  const [editorOpen, setEditorOpen] = useState(false);
   const save = useMutation({
     mutationFn: () => {
       const schedule =
@@ -586,26 +609,28 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
         "scheduler",
         draft.id ? `/v1/tasks/${draft.id}` : "/v1/tasks",
         {
-        method: draft.id ? "PUT" : "POST",
-        body: JSON.stringify({
-          tenantId: draft.tenantId,
-          botId: draft.botId,
-          name: draft.name,
-          enabled: draft.enabled,
-          schedule,
-          timezone: draft.timezone,
-          target: { type: "runtime", payload: { prompt: draft.prompt } },
-          retry: {
-            maxAttempts: draft.retryMaxAttempts,
-            delaySeconds: draft.retryDelaySeconds,
-          },
-          misfire: draft.misfire,
-          maxBackfill: draft.maxBackfill,
-        }),
-      });
+          method: draft.id ? "PUT" : "POST",
+          body: JSON.stringify({
+            tenantId: draft.tenantId,
+            botId: draft.botId,
+            name: draft.name,
+            enabled: draft.enabled,
+            schedule,
+            timezone: draft.timezone,
+            target: { type: "runtime", payload: { prompt: draft.prompt } },
+            retry: {
+              maxAttempts: draft.retryMaxAttempts,
+              delaySeconds: draft.retryDelaySeconds,
+            },
+            misfire: draft.misfire,
+            maxBackfill: draft.maxBackfill,
+          }),
+        },
+      );
     },
     onSuccess: () => {
       setDraft({ ...emptyDraft });
+      setEditorOpen(false);
       refetch();
     },
   });
@@ -642,294 +667,317 @@ function Schedules({ items, refetch }: { items: any[]; refetch: () => void }) {
   });
   return (
     <>
-      <div className="toolbar">
-        <span>{items.length} 个任务</span>
-      </div>
-      <div className="schedule-list">
-        {items.map((x) => (
-          <div className="schedule-row" key={x.id}>
-            <div>
-              <strong>{x.name}</strong>
-              <span>
-                {x.schedule?.type === "once" && x.lastRunAt
-                  ? "已完成"
-                  : x.enabled
-                    ? "已启用"
-                    : "已暂停"}{" "}
-                · {x.timezone}
-              </span>
-            </div>
-            <div className="schedule-times">
-              <span>上次 {x.lastRunAt ?? "尚未执行"}</span>
-              <span>下次 {x.nextRunAt ?? "无"}</span>
-            </div>
+      {!editorOpen && (
+        <>
+          <div className="toolbar">
+            <span>{items.length} 个任务</span>
             <button
-              className="secondary"
-              onClick={() => run.mutate(x.id)}
-              disabled={
-                run.isPending ||
-                (x.schedule?.type === "once" && Boolean(x.lastRunAt))
-              }
-            >
-              <Play size={16} />
-              立即执行
-            </button>
-            <button
-              className="icon-button"
-              title={x.enabled ? "暂停任务" : "恢复任务"}
-              onClick={() => toggle.mutate(x)}
-              disabled={x.schedule?.type === "once" && Boolean(x.lastRunAt)}
-            >
-              {x.enabled ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-            <button
-              className="icon-button"
-              title="运行日志"
-              onClick={() => setSelected(x)}
-            >
-              <History size={16} />
-            </button>
-            <button
-              className="icon-button"
-              title={
-                x.target?.type === "runtime" && x.schedule?.type !== "once"
-                  ? "编辑任务"
-                  : "该系统任务不支持在此编辑"
-              }
-              disabled={
-                x.target?.type !== "runtime" || x.schedule?.type === "once"
-              }
-              onClick={() =>
-                setDraft({
-                  id: x.id,
-                  tenantId: x.tenantId,
-                  name: x.name,
-                  botId: x.botId,
-                  enabled: x.enabled,
-                  scheduleType: x.schedule.type,
-                  time: x.schedule.time ?? "08:00",
-                  weekday: x.schedule.weekday ?? 1,
-                  intervalSeconds: x.schedule.seconds ?? 3600,
-                  cron: x.schedule.expression ?? "0 8 * * 1-5",
-                  timezone: x.timezone,
-                  prompt: String(x.target.payload?.prompt ?? ""),
-                  retryMaxAttempts: x.retry?.maxAttempts ?? 2,
-                  retryDelaySeconds: x.retry?.delaySeconds ?? 30,
-                  misfire: x.misfire ?? "run-once",
-                  maxBackfill: x.maxBackfill ?? 100,
-                })
-              }
-            >
-              <Settings size={16} />
-            </button>
-            <button
-              className="icon-button danger-button"
-              title="删除任务"
+              className="primary compact-button"
               onClick={() => {
-                if (window.confirm(`确认删除调度任务“${x.name}”？`))
-                  remove.mutate(x);
+                setDraft({ ...emptyDraft });
+                setEditorOpen(true);
               }}
             >
-              <Trash2 size={16} />
+              <Plus size={16} />
+              新增任务
             </button>
           </div>
-        ))}
-      </div>
-      <section className="section-band schedule-create">
-        <div className="section-title">
-          <h3>{draft.id ? "编辑调度任务" : "新建调度任务"}</h3>
-          {draft.id && (
-            <button
-              className="secondary compact-button"
-              onClick={() => setDraft({ ...emptyDraft })}
-            >
-              取消编辑
-            </button>
-          )}
-        </div>
-        <div className="schedule-form">
-          <label>
-            任务名
-            <input
-              value={draft.name}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            />
-          </label>
-          <label>
-            Bot ID
-            <input
-              value={draft.botId}
-              onChange={(e) => setDraft({ ...draft, botId: e.target.value })}
-            />
-          </label>
-          <label>
-            计划类型
-            <select
-              value={draft.scheduleType}
-              onChange={(e) =>
-                setDraft({ ...draft, scheduleType: e.target.value })
-              }
-            >
-              <option value="daily">每天</option>
-              <option value="weekly">每周</option>
-              <option value="interval">间隔</option>
-              <option value="cron">Cron</option>
-            </select>
-          </label>
-          {draft.scheduleType === "interval" ? (
-            <label>
-              间隔秒数
-              <input
-                type="number"
-                min={10}
-                value={draft.intervalSeconds}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    intervalSeconds: Number(e.target.value),
-                  })
-                }
-              />
-            </label>
-          ) : draft.scheduleType === "cron" ? (
-            <label>
-              Cron 表达式
-              <input
-                value={draft.cron}
-                onChange={(e) => setDraft({ ...draft, cron: e.target.value })}
-              />
-            </label>
-          ) : (
-            <label>
-              时间
-              <input
-                type="time"
-                value={draft.time}
-                onChange={(e) => setDraft({ ...draft, time: e.target.value })}
-              />
-            </label>
-          )}
-          {draft.scheduleType === "weekly" && (
-            <label>
-              星期
-              <select
-                value={draft.weekday}
-                onChange={(e) =>
-                  setDraft({ ...draft, weekday: Number(e.target.value) })
-                }
-              >
-                <option value={1}>周一</option>
-                <option value={2}>周二</option>
-                <option value={3}>周三</option>
-                <option value={4}>周四</option>
-                <option value={5}>周五</option>
-                <option value={6}>周六</option>
-                <option value={0}>周日</option>
-              </select>
-            </label>
-          )}
-          <label>
-            时区
-            <input
-              value={draft.timezone}
-              onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-            />
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(event) =>
-                setDraft({ ...draft, enabled: event.target.checked })
-              }
-            />
-            启用
-          </label>
-          <details className="advanced-config wide-field">
-            <summary>
-              <Settings size={16} />
-              高级配置
-            </summary>
-            <div className="advanced-grid">
-              <label>
-                重试次数
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={draft.retryMaxAttempts}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      retryMaxAttempts: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                重试延迟秒数
-                <input
-                  type="number"
-                  min={1}
-                  value={draft.retryDelaySeconds}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      retryDelaySeconds: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                错过执行策略
-                <select
-                  value={draft.misfire}
-                  onChange={(event) =>
-                    setDraft({ ...draft, misfire: event.target.value })
+          <div className="schedule-list">
+            {items.map((x) => (
+              <div className="schedule-row" key={x.id}>
+                <div>
+                  <strong>{x.name}</strong>
+                  <span>
+                    {x.schedule?.type === "once" && x.lastRunAt
+                      ? "已完成"
+                      : x.enabled
+                        ? "已启用"
+                        : "已暂停"}{" "}
+                    · {x.timezone}
+                  </span>
+                </div>
+                <div className="schedule-times">
+                  <span>上次 {x.lastRunAt ?? "尚未执行"}</span>
+                  <span>下次 {x.nextRunAt ?? "无"}</span>
+                </div>
+                <button
+                  className="secondary"
+                  onClick={() => run.mutate(x.id)}
+                  disabled={
+                    run.isPending ||
+                    (x.schedule?.type === "once" && Boolean(x.lastRunAt))
                   }
                 >
-                  <option value="skip">跳过</option>
-                  <option value="run-once">补跑一次</option>
-                  <option value="catch-up">追赶执行</option>
-                </select>
-              </label>
+                  <Play size={16} />
+                  立即执行
+                </button>
+                <button
+                  className="icon-button"
+                  title={x.enabled ? "暂停任务" : "恢复任务"}
+                  onClick={() => toggle.mutate(x)}
+                  disabled={x.schedule?.type === "once" && Boolean(x.lastRunAt)}
+                >
+                  {x.enabled ? <Pause size={16} /> : <Play size={16} />}
+                </button>
+                <button
+                  className="icon-button"
+                  title="运行日志"
+                  onClick={() => setSelected(x)}
+                >
+                  <History size={16} />
+                </button>
+                <button
+                  className="icon-button"
+                  title={
+                    x.target?.type === "runtime" && x.schedule?.type !== "once"
+                      ? "编辑任务"
+                      : "该系统任务不支持在此编辑"
+                  }
+                  disabled={
+                    x.target?.type !== "runtime" || x.schedule?.type === "once"
+                  }
+                  onClick={() => {
+                    setDraft({
+                      id: x.id,
+                      tenantId: x.tenantId,
+                      name: x.name,
+                      botId: x.botId,
+                      enabled: x.enabled,
+                      scheduleType: x.schedule.type,
+                      time: x.schedule.time ?? "08:00",
+                      weekday: x.schedule.weekday ?? 1,
+                      intervalSeconds: x.schedule.seconds ?? 3600,
+                      cron: x.schedule.expression ?? "0 8 * * 1-5",
+                      timezone: x.timezone,
+                      prompt: String(x.target.payload?.prompt ?? ""),
+                      retryMaxAttempts: x.retry?.maxAttempts ?? 2,
+                      retryDelaySeconds: x.retry?.delaySeconds ?? 30,
+                      misfire: x.misfire ?? "run-once",
+                      maxBackfill: x.maxBackfill ?? 100,
+                    });
+                    setEditorOpen(true);
+                  }}
+                >
+                  <Settings size={16} />
+                </button>
+                <button
+                  className="icon-button danger-button"
+                  title="删除任务"
+                  onClick={() => {
+                    if (window.confirm(`确认删除调度任务“${x.name}”？`))
+                      remove.mutate(x);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {editorOpen && (
+        <section className="section-band schedule-create">
+          <div className="section-title">
+            <h3>{draft.id ? "编辑调度任务" : "新建调度任务"}</h3>
+            <button
+              className="secondary compact-button"
+              onClick={() => {
+                setDraft({ ...emptyDraft });
+                setEditorOpen(false);
+              }}
+            >
+              返回列表
+            </button>
+          </div>
+          <div className="schedule-form">
+            <label>
+              任务名
+              <input
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              />
+            </label>
+            <label>
+              Bot ID
+              <input
+                value={draft.botId}
+                onChange={(e) => setDraft({ ...draft, botId: e.target.value })}
+              />
+            </label>
+            <label>
+              计划类型
+              <select
+                value={draft.scheduleType}
+                onChange={(e) =>
+                  setDraft({ ...draft, scheduleType: e.target.value })
+                }
+              >
+                <option value="daily">每天</option>
+                <option value="weekly">每周</option>
+                <option value="interval">间隔</option>
+                <option value="cron">Cron</option>
+              </select>
+            </label>
+            {draft.scheduleType === "interval" ? (
               <label>
-                最大追赶数量
+                间隔秒数
                 <input
                   type="number"
-                  min={1}
-                  max={1000}
-                  value={draft.maxBackfill}
-                  onChange={(event) =>
-                    setDraft({ ...draft, maxBackfill: Number(event.target.value) })
+                  min={10}
+                  value={draft.intervalSeconds}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      intervalSeconds: Number(e.target.value),
+                    })
                   }
                 />
               </label>
-            </div>
-          </details>
-          <label className="wide-field">
-            Prompt
-            <textarea
-              rows={4}
-              value={draft.prompt}
-              onChange={(e) => setDraft({ ...draft, prompt: e.target.value })}
-            />
-          </label>
-          <button
-            className="primary"
-            disabled={
-              !draft.name || !draft.botId || !draft.prompt || save.isPending
-            }
-            onClick={() => save.mutate()}
-          >
-            <CalendarClock size={16} />
-            {draft.id ? "保存修改" : "保存任务"}
-          </button>
-        </div>
-        {save.error && (
-          <div className="error form-error">{String(save.error)}</div>
-        )}
-      </section>
+            ) : draft.scheduleType === "cron" ? (
+              <label>
+                Cron 表达式
+                <input
+                  value={draft.cron}
+                  onChange={(e) => setDraft({ ...draft, cron: e.target.value })}
+                />
+              </label>
+            ) : (
+              <label>
+                时间
+                <input
+                  type="time"
+                  value={draft.time}
+                  onChange={(e) => setDraft({ ...draft, time: e.target.value })}
+                />
+              </label>
+            )}
+            {draft.scheduleType === "weekly" && (
+              <label>
+                星期
+                <select
+                  value={draft.weekday}
+                  onChange={(e) =>
+                    setDraft({ ...draft, weekday: Number(e.target.value) })
+                  }
+                >
+                  <option value={1}>周一</option>
+                  <option value={2}>周二</option>
+                  <option value={3}>周三</option>
+                  <option value={4}>周四</option>
+                  <option value={5}>周五</option>
+                  <option value={6}>周六</option>
+                  <option value={0}>周日</option>
+                </select>
+              </label>
+            )}
+            <label>
+              时区
+              <input
+                value={draft.timezone}
+                onChange={(e) =>
+                  setDraft({ ...draft, timezone: e.target.value })
+                }
+              />
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={draft.enabled}
+                onChange={(event) =>
+                  setDraft({ ...draft, enabled: event.target.checked })
+                }
+              />
+              启用
+            </label>
+            <details className="advanced-config wide-field">
+              <summary>
+                <Settings size={16} />
+                高级配置
+              </summary>
+              <div className="advanced-grid">
+                <label>
+                  重试次数
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={draft.retryMaxAttempts}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        retryMaxAttempts: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  重试延迟秒数
+                  <input
+                    type="number"
+                    min={1}
+                    value={draft.retryDelaySeconds}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        retryDelaySeconds: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  错过执行策略
+                  <select
+                    value={draft.misfire}
+                    onChange={(event) =>
+                      setDraft({ ...draft, misfire: event.target.value })
+                    }
+                  >
+                    <option value="skip">跳过</option>
+                    <option value="run-once">补跑一次</option>
+                    <option value="catch-up">追赶执行</option>
+                  </select>
+                </label>
+                <label>
+                  最大追赶数量
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={draft.maxBackfill}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        maxBackfill: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </details>
+            <label className="wide-field">
+              Prompt
+              <textarea
+                rows={4}
+                value={draft.prompt}
+                onChange={(e) => setDraft({ ...draft, prompt: e.target.value })}
+              />
+            </label>
+            <button
+              className="primary"
+              disabled={
+                !draft.name || !draft.botId || !draft.prompt || save.isPending
+              }
+              onClick={() => save.mutate()}
+            >
+              <CalendarClock size={16} />
+              {draft.id ? "保存修改" : "保存任务"}
+            </button>
+          </div>
+          {save.error && (
+            <div className="error form-error">{String(save.error)}</div>
+          )}
+        </section>
+      )}
       {selected && (
         <div
           className="modal-backdrop"
@@ -1171,35 +1219,33 @@ function ContextPanel() {
   };
   const [source, setSource] = useState(emptySource);
   const [binding, setBinding] = useState(emptyBinding);
+  const [editor, setEditor] = useState<"source" | "binding">();
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["context-sources"] });
     void client.invalidateQueries({ queryKey: ["context-bindings"] });
   };
   const saveSource = useMutation({
     mutationFn: () =>
-      center(
-        "ch",
-        source.id ? `/v1/sources/${source.id}` : "/v1/sources",
-        {
-          method: source.id ? "PUT" : "POST",
-          body: JSON.stringify({
-            name: source.name,
-            kind: source.kind,
-            enabled: source.enabled,
-            scope: {
-              tenantId: "default",
-              botIds: source.scopeBotIds.split(/[,，\s]+/).filter(Boolean),
-              workspaceIds: source.scopeWorkspaceIds
-                .split(/[,，\s]+/)
-                .filter(Boolean),
-            },
-            config: parseObjectJson(source.configJson, "来源配置"),
-            freshnessTtlSeconds: source.freshnessTtlSeconds,
-          }),
-        },
-      ),
+      center("ch", source.id ? `/v1/sources/${source.id}` : "/v1/sources", {
+        method: source.id ? "PUT" : "POST",
+        body: JSON.stringify({
+          name: source.name,
+          kind: source.kind,
+          enabled: source.enabled,
+          scope: {
+            tenantId: "default",
+            botIds: source.scopeBotIds.split(/[,，\s]+/).filter(Boolean),
+            workspaceIds: source.scopeWorkspaceIds
+              .split(/[,，\s]+/)
+              .filter(Boolean),
+          },
+          config: parseObjectJson(source.configJson, "来源配置"),
+          freshnessTtlSeconds: source.freshnessTtlSeconds,
+        }),
+      }),
     onSuccess: () => {
       setSource({ ...emptySource });
+      setEditor(undefined);
       refresh();
     },
   });
@@ -1213,23 +1259,20 @@ function ContextPanel() {
   });
   const saveBinding = useMutation({
     mutationFn: () =>
-      center(
-        "ch",
-        binding.id ? `/v1/bindings/${binding.id}` : "/v1/bindings",
-        {
-          method: binding.id ? "PUT" : "POST",
-          body: JSON.stringify({
-            sourceId: binding.sourceId,
-            botId: binding.botId,
-            enabled: binding.enabled,
-            priority: binding.priority,
-            maxAgeSeconds: binding.maxAgeSeconds,
-            tags: binding.tags.split(/[,，\s]+/).filter(Boolean),
-          }),
-        },
-      ),
+      center("ch", binding.id ? `/v1/bindings/${binding.id}` : "/v1/bindings", {
+        method: binding.id ? "PUT" : "POST",
+        body: JSON.stringify({
+          sourceId: binding.sourceId,
+          botId: binding.botId,
+          enabled: binding.enabled,
+          priority: binding.priority,
+          maxAgeSeconds: binding.maxAgeSeconds,
+          tags: binding.tags.split(/[,，\s]+/).filter(Boolean),
+        }),
+      }),
     onSuccess: () => {
       setBinding({ ...emptyBinding });
+      setEditor(undefined);
       refresh();
     },
   });
@@ -1247,11 +1290,27 @@ function ContextPanel() {
     saveBinding.error ??
     removeBinding.error;
   return (
-    <div className="stack">
-      <section className="section-band">
+    <div
+      className={`stack context-workspace ${editor ? `editing edit-${editor}` : "listing"}`}
+    >
+      <section className="section-band source-section">
         <div className="section-title">
           <h3>上下文来源</h3>
-          <span>{sources.data?.length ?? 0} 个</span>
+          {!editor && (
+            <div className="section-actions">
+              <span>{sources.data?.length ?? 0} 个</span>
+              <button
+                className="primary compact-button"
+                onClick={() => {
+                  setSource({ ...emptySource });
+                  setEditor("source");
+                }}
+              >
+                <Plus size={16} />
+                新增来源
+              </button>
+            </div>
+          )}
         </div>
         <div className="model-entity-list">
           {(sources.data ?? []).map((item) => {
@@ -1274,19 +1333,21 @@ function ContextPanel() {
                     className="icon-button"
                     title={managed ? "系统托管来源不可编辑" : "编辑来源"}
                     disabled={managed}
-                    onClick={() =>
+                    onClick={() => {
                       setSource({
                         id: item.id,
                         name: item.name,
                         kind: item.kind,
                         enabled: item.enabled,
-                        freshnessTtlSeconds:
-                          item.freshnessTtlSeconds ?? 86400,
+                        freshnessTtlSeconds: item.freshnessTtlSeconds ?? 86400,
                         scopeBotIds: (item.scope?.botIds ?? []).join(", "),
-                        scopeWorkspaceIds: (item.scope?.workspaceIds ?? []).join(", "),
+                        scopeWorkspaceIds: (
+                          item.scope?.workspaceIds ?? []
+                        ).join(", "),
                         configJson: JSON.stringify(item.config ?? {}, null, 2),
-                      })
-                    }
+                      });
+                      setEditor("source");
+                    }}
                   >
                     <Settings size={16} />
                   </button>
@@ -1312,14 +1373,15 @@ function ContextPanel() {
         </div>
         <div className="editor-heading">
           <strong>{source.id ? "编辑上下文来源" : "新增上下文来源"}</strong>
-          {source.id && (
-            <button
-              className="secondary compact-button"
-              onClick={() => setSource({ ...emptySource })}
-            >
-              取消编辑
-            </button>
-          )}
+          <button
+            className="secondary compact-button"
+            onClick={() => {
+              setSource({ ...emptySource });
+              setEditor(undefined);
+            }}
+          >
+            返回列表
+          </button>
         </div>
         <div className="context-form">
           <input
@@ -1391,7 +1453,10 @@ function ContextPanel() {
                   placeholder="多个值用逗号分隔"
                   value={source.scopeWorkspaceIds}
                   onChange={(event) =>
-                    setSource({ ...source, scopeWorkspaceIds: event.target.value })
+                    setSource({
+                      ...source,
+                      scopeWorkspaceIds: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -1417,10 +1482,24 @@ function ContextPanel() {
           </button>
         </div>
       </section>
-      <section className="section-band">
+      <section className="section-band binding-section">
         <div className="section-title">
           <h3>机器人绑定</h3>
-          <span>{bindings.data?.length ?? 0} 个</span>
+          {!editor && (
+            <div className="section-actions">
+              <span>{bindings.data?.length ?? 0} 个</span>
+              <button
+                className="primary compact-button"
+                onClick={() => {
+                  setBinding({ ...emptyBinding });
+                  setEditor("binding");
+                }}
+              >
+                <Plus size={16} />
+                新增绑定
+              </button>
+            </div>
+          )}
         </div>
         <div className="model-entity-list">
           {(bindings.data ?? []).map((item) => (
@@ -1433,7 +1512,8 @@ function ContextPanel() {
                 </strong>
                 <span>
                   {(bots.data ?? []).find((entry) => entry.id === item.botId)
-                    ?.name ?? item.botId} · 优先级 {item.priority}
+                    ?.name ?? item.botId}{" "}
+                  · 优先级 {item.priority}
                 </span>
               </div>
               <code>{item.enabled ? "已启用" : "已停用"}</code>
@@ -1441,7 +1521,7 @@ function ContextPanel() {
                 <button
                   className="icon-button"
                   title="编辑绑定"
-                  onClick={() =>
+                  onClick={() => {
                     setBinding({
                       id: item.id,
                       sourceId: item.sourceId,
@@ -1450,8 +1530,9 @@ function ContextPanel() {
                       priority: item.priority,
                       maxAgeSeconds: item.maxAgeSeconds ?? 86400,
                       tags: (item.tags ?? []).join(", "),
-                    })
-                  }
+                    });
+                    setEditor("binding");
+                  }}
                 >
                   <Settings size={16} />
                 </button>
@@ -1471,14 +1552,15 @@ function ContextPanel() {
         </div>
         <div className="editor-heading">
           <strong>{binding.id ? "编辑机器人绑定" : "新增机器人绑定"}</strong>
-          {binding.id && (
-            <button
-              className="secondary compact-button"
-              onClick={() => setBinding({ ...emptyBinding })}
-            >
-              取消编辑
-            </button>
-          )}
+          <button
+            className="secondary compact-button"
+            onClick={() => {
+              setBinding({ ...emptyBinding });
+              setEditor(undefined);
+            }}
+          >
+            返回列表
+          </button>
         </div>
         <div className="context-form">
           <select
@@ -1635,6 +1717,7 @@ function ModelsPanel() {
   const [provider, setProvider] = useState(emptyProvider);
   const [deployment, setDeployment] = useState(emptyDeployment);
   const [policy, setPolicy] = useState(emptyPolicy);
+  const [editor, setEditor] = useState<"provider" | "deployment" | "policy">();
   const invalidateModels = () => {
     void client.invalidateQueries({ queryKey: ["model-providers"] });
     void client.invalidateQueries({ queryKey: ["model-deployments"] });
@@ -1694,6 +1777,7 @@ function ModelsPanel() {
     },
     onSuccess: () => {
       setProvider({ ...emptyProvider });
+      setEditor(undefined);
       invalidateModels();
     },
   });
@@ -1705,9 +1789,7 @@ function ModelsPanel() {
         name: deployment.name,
         kind: deployment.kind,
         enabled: deployment.enabled,
-        capabilities: deployment.capabilities
-          .split(/[,，\s]+/)
-          .filter(Boolean),
+        capabilities: deployment.capabilities.split(/[,，\s]+/).filter(Boolean),
         contextWindow: deployment.contextWindow
           ? Number(deployment.contextWindow)
           : undefined,
@@ -1730,6 +1812,7 @@ function ModelsPanel() {
     },
     onSuccess: () => {
       setDeployment({ ...emptyDeployment });
+      setEditor(undefined);
       invalidateModels();
     },
   });
@@ -1757,6 +1840,7 @@ function ModelsPanel() {
     },
     onSuccess: () => {
       setPolicy({ ...emptyPolicy, deploymentIds: [] });
+      setEditor(undefined);
       invalidateModels();
     },
   });
@@ -1769,7 +1853,13 @@ function ModelsPanel() {
     onSuccess: invalidateModels,
   });
   const removeEntity = useMutation({
-    mutationFn: ({ type, id }: { type: "provider" | "model" | "policy"; id: string }) =>
+    mutationFn: ({
+      type,
+      id,
+    }: {
+      type: "provider" | "model" | "policy";
+      id: string;
+    }) =>
       center(
         "mh",
         type === "provider"
@@ -1803,11 +1893,27 @@ function ModelsPanel() {
     probeProvider.error ??
     removeEntity.error;
   return (
-    <div className="stack">
-      <section className="section-band">
+    <div
+      className={`stack models-workspace ${editor ? `editing edit-${editor}` : "listing"}`}
+    >
+      <section className="section-band provider-section">
         <div className="section-title">
           <h3>Model Provider</h3>
-          <span>{providers.data?.length ?? 0} 个</span>
+          {!editor && (
+            <div className="section-actions">
+              <span>{providers.data?.length ?? 0} 个</span>
+              <button
+                className="primary compact-button"
+                onClick={() => {
+                  setProvider({ ...emptyProvider });
+                  setEditor("provider");
+                }}
+              >
+                <Plus size={16} />
+                新增 Provider
+              </button>
+            </div>
+          )}
         </div>
         <div className="model-entity-list">
           {(providers.data ?? []).map((item) => (
@@ -1830,7 +1936,7 @@ function ModelsPanel() {
                 <button
                   className="icon-button"
                   title="编辑 Provider"
-                  onClick={() =>
+                  onClick={() => {
                     setProvider({
                       id: item.id,
                       name: item.name,
@@ -1842,8 +1948,9 @@ function ModelsPanel() {
                       priority: item.priority,
                       weight: item.weight,
                       headersJson: JSON.stringify(item.headers ?? {}, null, 2),
-                    })
-                  }
+                    });
+                    setEditor("provider");
+                  }}
                 >
                   <Settings size={16} />
                 </button>
@@ -1863,14 +1970,15 @@ function ModelsPanel() {
         </div>
         <div className="editor-heading">
           <strong>{provider.id ? "编辑 Provider" : "新增 Provider"}</strong>
-          {provider.id && (
-            <button
-              className="secondary compact-button"
-              onClick={() => setProvider({ ...emptyProvider })}
-            >
-              取消编辑
-            </button>
-          )}
+          <button
+            className="secondary compact-button"
+            onClick={() => {
+              setProvider({ ...emptyProvider });
+              setEditor(undefined);
+            }}
+          >
+            返回列表
+          </button>
         </div>
         <div className="model-provider-form">
           <input
@@ -1935,7 +2043,10 @@ function ModelsPanel() {
                   type="number"
                   value={provider.priority}
                   onChange={(event) =>
-                    setProvider({ ...provider, priority: Number(event.target.value) })
+                    setProvider({
+                      ...provider,
+                      priority: Number(event.target.value),
+                    })
                   }
                 />
               </label>
@@ -1946,7 +2057,10 @@ function ModelsPanel() {
                   min={1}
                   value={provider.weight}
                   onChange={(event) =>
-                    setProvider({ ...provider, weight: Number(event.target.value) })
+                    setProvider({
+                      ...provider,
+                      weight: Number(event.target.value),
+                    })
                   }
                 />
               </label>
@@ -1957,7 +2071,10 @@ function ModelsPanel() {
                   spellCheck={false}
                   value={provider.headersJson}
                   onChange={(event) =>
-                    setProvider({ ...provider, headersJson: event.target.value })
+                    setProvider({
+                      ...provider,
+                      headersJson: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -1974,10 +2091,24 @@ function ModelsPanel() {
           </button>
         </div>
       </section>
-      <section className="section-band">
+      <section className="section-band deployment-section">
         <div className="section-title">
           <h3>模型部署</h3>
-          <span>{deployments.data?.length ?? 0} 个</span>
+          {!editor && (
+            <div className="section-actions">
+              <span>{deployments.data?.length ?? 0} 个</span>
+              <button
+                className="primary compact-button"
+                onClick={() => {
+                  setDeployment({ ...emptyDeployment });
+                  setEditor("deployment");
+                }}
+              >
+                <Plus size={16} />
+                新增模型
+              </button>
+            </div>
+          )}
         </div>
         <div className="model-entity-list">
           {(deployments.data ?? []).map((item) => (
@@ -1985,18 +2116,20 @@ function ModelsPanel() {
               <div>
                 <strong>{item.name}</strong>
                 <span>
-                  {item.modelId} · {item.kind} · {item.enabled ? "已启用" : "已停用"}
+                  {item.modelId} · {item.kind} ·{" "}
+                  {item.enabled ? "已启用" : "已停用"}
                 </span>
               </div>
               <code>
-                {(providers.data ?? []).find((entry) => entry.id === item.providerId)
-                  ?.name ?? item.providerId}
+                {(providers.data ?? []).find(
+                  (entry) => entry.id === item.providerId,
+                )?.name ?? item.providerId}
               </code>
               <div className="row-actions">
                 <button
                   className="icon-button"
                   title="编辑模型"
-                  onClick={() =>
+                  onClick={() => {
                     setDeployment({
                       id: item.id,
                       providerId: item.providerId,
@@ -2016,9 +2149,14 @@ function ModelsPanel() {
                         item.outputPricePerMillion == null
                           ? ""
                           : String(item.outputPricePerMillion),
-                      metadataJson: JSON.stringify(item.metadata ?? {}, null, 2),
-                    })
-                  }
+                      metadataJson: JSON.stringify(
+                        item.metadata ?? {},
+                        null,
+                        2,
+                      ),
+                    });
+                    setEditor("deployment");
+                  }}
                 >
                   <Settings size={16} />
                 </button>
@@ -2038,14 +2176,15 @@ function ModelsPanel() {
         </div>
         <div className="editor-heading">
           <strong>{deployment.id ? "编辑模型部署" : "新增模型部署"}</strong>
-          {deployment.id && (
-            <button
-              className="secondary compact-button"
-              onClick={() => setDeployment({ ...emptyDeployment })}
-            >
-              取消编辑
-            </button>
-          )}
+          <button
+            className="secondary compact-button"
+            onClick={() => {
+              setDeployment({ ...emptyDeployment });
+              setEditor(undefined);
+            }}
+          >
+            返回列表
+          </button>
         </div>
         <div className="model-form">
           <select
@@ -2118,7 +2257,10 @@ function ModelsPanel() {
                   placeholder="tools, vision"
                   value={deployment.capabilities}
                   onChange={(event) =>
-                    setDeployment({ ...deployment, capabilities: event.target.value })
+                    setDeployment({
+                      ...deployment,
+                      capabilities: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -2129,7 +2271,10 @@ function ModelsPanel() {
                   min={1}
                   value={deployment.contextWindow}
                   onChange={(event) =>
-                    setDeployment({ ...deployment, contextWindow: event.target.value })
+                    setDeployment({
+                      ...deployment,
+                      contextWindow: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -2141,7 +2286,10 @@ function ModelsPanel() {
                   step="any"
                   value={deployment.inputPricePerMillion}
                   onChange={(event) =>
-                    setDeployment({ ...deployment, inputPricePerMillion: event.target.value })
+                    setDeployment({
+                      ...deployment,
+                      inputPricePerMillion: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -2153,7 +2301,10 @@ function ModelsPanel() {
                   step="any"
                   value={deployment.outputPricePerMillion}
                   onChange={(event) =>
-                    setDeployment({ ...deployment, outputPricePerMillion: event.target.value })
+                    setDeployment({
+                      ...deployment,
+                      outputPricePerMillion: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -2164,7 +2315,10 @@ function ModelsPanel() {
                   spellCheck={false}
                   value={deployment.metadataJson}
                   onChange={(event) =>
-                    setDeployment({ ...deployment, metadataJson: event.target.value })
+                    setDeployment({
+                      ...deployment,
+                      metadataJson: event.target.value,
+                    })
                   }
                 />
               </label>
@@ -2184,10 +2338,24 @@ function ModelsPanel() {
           </button>
         </div>
       </section>
-      <section className="section-band">
+      <section className="section-band policy-section">
         <div className="section-title">
           <h3>使用策略</h3>
-          <span>{policies.data?.length ?? 0} 个</span>
+          {!editor && (
+            <div className="section-actions">
+              <span>{policies.data?.length ?? 0} 个</span>
+              <button
+                className="primary compact-button"
+                onClick={() => {
+                  setPolicy({ ...emptyPolicy, deploymentIds: [] });
+                  setEditor("policy");
+                }}
+              >
+                <Plus size={16} />
+                新增策略
+              </button>
+            </div>
+          )}
         </div>
         <div className="model-entity-list">
           {(policies.data ?? []).map((item) => (
@@ -2195,7 +2363,8 @@ function ModelsPanel() {
               <div>
                 <strong>{item.name}</strong>
                 <span>
-                  {item.mode} · {item.deploymentIds.length} 个模型 · {item.enabled ? "已启用" : "已停用"}
+                  {item.mode} · {item.deploymentIds.length} 个模型 ·{" "}
+                  {item.enabled ? "已启用" : "已停用"}
                 </span>
               </div>
               <code>{item.failoverOnFailure ? "失败切换" : "单次尝试"}</code>
@@ -2203,7 +2372,7 @@ function ModelsPanel() {
                 <button
                   className="icon-button"
                   title="编辑策略"
-                  onClick={() =>
+                  onClick={() => {
                     setPolicy({
                       id: item.id,
                       name: item.name,
@@ -2213,8 +2382,9 @@ function ModelsPanel() {
                       maxAttempts: item.maxAttempts,
                       enabled: item.enabled,
                       deploymentIds: [...item.deploymentIds],
-                    })
-                  }
+                    });
+                    setEditor("policy");
+                  }}
                 >
                   <Settings size={16} />
                 </button>
@@ -2234,14 +2404,15 @@ function ModelsPanel() {
         </div>
         <div className="editor-heading">
           <strong>{policy.id ? "编辑使用策略" : "新增使用策略"}</strong>
-          {policy.id && (
-            <button
-              className="secondary compact-button"
-              onClick={() => setPolicy({ ...emptyPolicy, deploymentIds: [] })}
-            >
-              取消编辑
-            </button>
-          )}
+          <button
+            className="secondary compact-button"
+            onClick={() => {
+              setPolicy({ ...emptyPolicy, deploymentIds: [] });
+              setEditor(undefined);
+            }}
+          >
+            返回列表
+          </button>
         </div>
         <div className="policy-form">
           <input
@@ -2374,6 +2545,10 @@ function ChannelsPanel() {
     queryKey: ["channel-types"],
     queryFn: () => center<any[]>("mg", "/v1/channel-types"),
   });
+  const channelBackends = useQuery({
+    queryKey: ["channel-backends"],
+    queryFn: () => center<any[]>("mg", "/v1/channel-backends"),
+  });
   const routes = useQuery({
     queryKey: ["routes"],
     queryFn: () => center<any[]>("mg", "/v1/routes"),
@@ -2394,6 +2569,7 @@ function ChannelsPanel() {
     requireMention: true,
   };
   const [draft, setDraft] = useState(emptyDraft);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [oauthScopes, setOauthScopes] = useState("search:docs:read");
   const save = useMutation({
     mutationFn: async () => {
@@ -2441,22 +2617,23 @@ function ChannelsPanel() {
         "mg",
         draft.id ? `/v1/channels/${draft.id}` : "/v1/channels",
         {
-        method: draft.id ? "PUT" : "POST",
-        body: JSON.stringify({
-          channel: "lark",
-          tenantId: "default",
-          accountId: draft.appId,
-          botId: draft.botId,
-          name: draft.name,
-          enabled: draft.enabled,
-          credentialRef,
-          config: {
-            ...draft.config,
-            ...parseObjectJson(draft.configJson, "通道配置"),
-            transport: draft.transport,
-          },
-        }),
-      });
+          method: draft.id ? "PUT" : "POST",
+          body: JSON.stringify({
+            channel: "lark",
+            tenantId: "default",
+            accountId: draft.appId,
+            botId: draft.botId,
+            name: draft.name,
+            enabled: draft.enabled,
+            credentialRef,
+            config: {
+              ...draft.config,
+              ...parseObjectJson(draft.configJson, "通道配置"),
+              transport: draft.transport,
+            },
+          }),
+        },
+      );
       const sinks = await center<any[]>("mg", "/v1/sinks");
       let runtimeSink = sinks.find(
         (sink) =>
@@ -2517,6 +2694,7 @@ function ChannelsPanel() {
     },
     onSuccess: () => {
       setDraft({ ...emptyDraft, config: {}, configJson: "{}" });
+      setEditorOpen(false);
       void client.invalidateQueries({ queryKey: ["channels"] });
       void client.invalidateQueries({ queryKey: ["routes"] });
     },
@@ -2569,294 +2747,330 @@ function ChannelsPanel() {
   const oauthResult = new URLSearchParams(location.search).get("larkOAuth");
   return (
     <div className="stack">
-      <section className="section-band">
-        <div className="section-title">
-          <h3>通道类型</h3>
-          <span>{channelTypes.data?.length ?? 0} 种</span>
-        </div>
-        <div className="channel-list">
-          {(channelTypes.data ?? []).map((item) => (
-            <div className="channel-row" key={item.channel}>
-              <div>
-                <strong>{item.channel}</strong>
-                <span>{item.reason ?? "适配器可用"}</span>
-              </div>
-              <span className={`status-pill ${item.availability}`}>
-                {item.availability}
-              </span>
-              <code>{item.capabilities.length} capabilities</code>
+      {!editorOpen && (
+        <>
+          <section className="section-band">
+            <div className="section-title">
+              <h3>通道类型</h3>
+              <span>{channelTypes.data?.length ?? 0} 种</span>
             </div>
-          ))}
-        </div>
-      </section>
-      <section className="section-band">
-        <div className="section-title">
-          <h3>通道账号</h3>
-          <span>{channels.data?.length ?? 0} 个</span>
-        </div>
-        <div className="oauth-toolbar">
-          <label>
-            用户授权权限
-            <input
-              value={oauthScopes}
-              onChange={(event) => setOauthScopes(event.target.value)}
-              placeholder="search:docs:read"
-            />
-          </label>
-          <span>多个权限用空格分隔，系统自动加入离线授权。</span>
-        </div>
-        {oauthResult && (
-          <div className={oauthResult === "failed" ? "error" : "notice"}>
-            飞书用户授权结果：{oauthResult}
-          </div>
-        )}
-        <div className="channel-list">
-          {(channels.data ?? []).map((channel) => (
-            <div className="channel-row" key={channel.id}>
-              <div>
-                <strong>{channel.name}</strong>
-                <span>
-                  {channel.channel} · {channel.status}
-                </span>
-              </div>
-              <code>{channel.config?.botOpenId ?? channel.accountId}</code>
-              <div className="row-actions">
-                {channel.channel === "lark" && (
-                  <>
-                    <span className="oauth-state">
-                      用户授权：{channel.config?.userOAuth?.status ?? "未授权"}
-                      {channel.config?.userOAuth?.missingScopes?.length
-                        ? ` · 缺少 ${channel.config.userOAuth.missingScopes.length} 项权限`
-                        : ""}
+            <div className="channel-list">
+              {(channelTypes.data ?? []).map((item) => (
+                <div className="channel-row" key={item.channel}>
+                  <div>
+                    <strong>{item.channel}</strong>
+                    <span>{item.reason ?? "适配器可用"}</span>
+                  </div>
+                  <span className={`status-pill ${item.availability}`}>
+                    {item.availability}
+                  </span>
+                  <code>{item.capabilities.length} capabilities</code>
+                </div>
+              ))}
+            </div>
+            <div className="model-entity-list">
+              {(channelBackends.data ?? []).map((backend) => (
+                <div className="model-entity-row" key={backend.id}>
+                  <div>
+                    <strong>{backend.id}</strong>
+                    <span>
+                      {backend.implementation} · {backend.availability}
                     </span>
-                    <button
-                      className="secondary"
-                      onClick={() => authorize.mutate(channel.id)}
-                      disabled={authorize.isPending}
-                    >
-                      <KeyRound size={16} />
-                      {channel.config?.userOAuth ? "重新授权" : "用户授权"}
-                    </button>
-                    {channel.config?.userOAuth?.credentialRef && (
-                      <button
-                        className="icon-button"
-                        title="刷新用户令牌"
-                        onClick={() => refreshOAuth.mutate(channel.id)}
-                        disabled={refreshOAuth.isPending}
-                      >
-                        <RefreshCw size={16} />
-                      </button>
-                    )}
-                  </>
-                )}
+                  </div>
+                  <code>{backend.version}</code>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="section-band">
+            <div className="section-title">
+              <h3>通道账号</h3>
+              <div className="section-actions">
+                <span>{channels.data?.length ?? 0} 个</span>
                 <button
-                  className="icon-button"
-                  title="检测通道"
-                  onClick={() => probe.mutate(channel.id)}
-                >
-                  <Activity size={16} />
-                </button>
-                <button
-                  className="icon-button"
-                  title="编辑通道"
+                  className="primary compact-button"
                   onClick={() => {
-                    const route = (routes.data ?? []).find(
-                      (item) => item.channelAccountId === channel.id,
-                    );
-                    setDraft({
-                      id: channel.id,
-                      name: channel.name,
-                      botId: channel.botId,
-                      appId: channel.accountId,
-                      appSecret: "",
-                      verificationToken: "",
-                      encryptKey: "",
-                      credentialRef: channel.credentialRef ?? "",
-                      config: channel.config ?? {},
-                      configJson: JSON.stringify(channel.config ?? {}, null, 2),
-                      enabled: channel.enabled,
-                      transport:
-                        channel.config?.transport ?? "long-connection",
-                      requireMention: route?.requireMention ?? true,
-                    });
+                    setDraft({ ...emptyDraft, config: {}, configJson: "{}" });
+                    setEditorOpen(true);
                   }}
                 >
-                  <Settings size={16} />
-                </button>
-                <button
-                  className="icon-button danger-button"
-                  title="删除通道"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `确认删除通道“${channel.name}”及其专属消息路由？历史消息不会删除。`,
-                      )
-                    )
-                      removeChannel.mutate(channel);
-                  }}
-                >
-                  <Trash2 size={16} />
+                  <Plus size={16} />
+                  新增通道
                 </button>
               </div>
             </div>
-          ))}
-          {!channels.isLoading && !(channels.data ?? []).length && (
-            <div className="empty">暂无通道</div>
-          )}
-        </div>
-        {(authorize.error || refreshOAuth.error || removeChannel.error) && (
-          <div className="error form-error">
-            {String(
-              authorize.error ?? refreshOAuth.error ?? removeChannel.error,
+            <div className="oauth-toolbar">
+              <label>
+                用户授权权限
+                <input
+                  value={oauthScopes}
+                  onChange={(event) => setOauthScopes(event.target.value)}
+                  placeholder="search:docs:read"
+                />
+              </label>
+              <span>多个权限用空格分隔，系统自动加入离线授权。</span>
+            </div>
+            {oauthResult && (
+              <div className={oauthResult === "failed" ? "error" : "notice"}>
+                飞书用户授权结果：{oauthResult}
+              </div>
             )}
-          </div>
-        )}
-      </section>
-      <section className="section-band">
-        <div className="section-title">
-          <h3>{draft.id ? "编辑飞书通道" : "新增飞书通道"}</h3>
-          {draft.id && (
+            <div className="channel-list">
+              {(channels.data ?? []).map((channel) => (
+                <div className="channel-row" key={channel.id}>
+                  <div>
+                    <strong>{channel.name}</strong>
+                    <span>
+                      {channel.channel} · {channel.status}
+                    </span>
+                  </div>
+                  <code>{channel.config?.botOpenId ?? channel.accountId}</code>
+                  <div className="row-actions">
+                    {channel.channel === "lark" && (
+                      <>
+                        <span className="oauth-state">
+                          用户授权：
+                          {channel.config?.userOAuth?.status ?? "未授权"}
+                          {channel.config?.userOAuth?.missingScopes?.length
+                            ? ` · 缺少 ${channel.config.userOAuth.missingScopes.length} 项权限`
+                            : ""}
+                        </span>
+                        <button
+                          className="secondary"
+                          onClick={() => authorize.mutate(channel.id)}
+                          disabled={authorize.isPending}
+                        >
+                          <KeyRound size={16} />
+                          {channel.config?.userOAuth ? "重新授权" : "用户授权"}
+                        </button>
+                        {channel.config?.userOAuth?.credentialRef && (
+                          <button
+                            className="icon-button"
+                            title="刷新用户令牌"
+                            onClick={() => refreshOAuth.mutate(channel.id)}
+                            disabled={refreshOAuth.isPending}
+                          >
+                            <RefreshCw size={16} />
+                          </button>
+                        )}
+                      </>
+                    )}
+                    <button
+                      className="icon-button"
+                      title="检测通道"
+                      onClick={() => probe.mutate(channel.id)}
+                    >
+                      <Activity size={16} />
+                    </button>
+                    <button
+                      className="icon-button"
+                      title="编辑通道"
+                      onClick={() => {
+                        const route = (routes.data ?? []).find(
+                          (item) => item.channelAccountId === channel.id,
+                        );
+                        setDraft({
+                          id: channel.id,
+                          name: channel.name,
+                          botId: channel.botId,
+                          appId: channel.accountId,
+                          appSecret: "",
+                          verificationToken: "",
+                          encryptKey: "",
+                          credentialRef: channel.credentialRef ?? "",
+                          config: channel.config ?? {},
+                          configJson: JSON.stringify(
+                            channel.config ?? {},
+                            null,
+                            2,
+                          ),
+                          enabled: channel.enabled,
+                          transport:
+                            channel.config?.transport ?? "long-connection",
+                          requireMention: route?.requireMention ?? true,
+                        });
+                        setEditorOpen(true);
+                      }}
+                    >
+                      <Settings size={16} />
+                    </button>
+                    <button
+                      className="icon-button danger-button"
+                      title="删除通道"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `确认删除通道“${channel.name}”及其专属消息路由？历史消息不会删除。`,
+                          )
+                        )
+                          removeChannel.mutate(channel);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!channels.isLoading && !(channels.data ?? []).length && (
+                <div className="empty">暂无通道</div>
+              )}
+            </div>
+            {(authorize.error || refreshOAuth.error || removeChannel.error) && (
+              <div className="error form-error">
+                {String(
+                  authorize.error ?? refreshOAuth.error ?? removeChannel.error,
+                )}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+      {editorOpen && (
+        <section className="section-band">
+          <div className="section-title">
+            <h3>{draft.id ? "编辑飞书通道" : "新增飞书通道"}</h3>
             <button
               className="secondary compact-button"
-              onClick={() =>
-                setDraft({ ...emptyDraft, config: {}, configJson: "{}" })
-              }
+              onClick={() => {
+                setDraft({ ...emptyDraft, config: {}, configJson: "{}" });
+                setEditorOpen(false);
+              }}
             >
-              取消编辑
+              返回列表
             </button>
+          </div>
+          <div className="channel-form">
+            <label>
+              名称
+              <input
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              />
+            </label>
+            <label>
+              机器人
+              <select
+                value={draft.botId}
+                onChange={(e) => setDraft({ ...draft, botId: e.target.value })}
+              >
+                <option value="">请选择</option>
+                {(bots.data ?? []).map((bot) => (
+                  <option key={bot.id} value={bot.id}>
+                    {bot.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              App ID
+              <input
+                value={draft.appId}
+                disabled={Boolean(draft.id)}
+                onChange={(e) => setDraft({ ...draft, appId: e.target.value })}
+              />
+            </label>
+            <label>
+              App Secret
+              <input
+                type="password"
+                placeholder={draft.id ? "留空则保持原凭据" : ""}
+                value={draft.appSecret}
+                onChange={(e) =>
+                  setDraft({ ...draft, appSecret: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              接收方式
+              <select
+                value={draft.transport}
+                onChange={(e) =>
+                  setDraft({ ...draft, transport: e.target.value })
+                }
+              >
+                <option value="long-connection">长连接</option>
+                <option value="webhook">Webhook</option>
+              </select>
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={draft.requireMention}
+                onChange={(e) =>
+                  setDraft({ ...draft, requireMention: e.target.checked })
+                }
+              />
+              群聊仅在 @ 机器人时响应
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={draft.enabled}
+                onChange={(event) =>
+                  setDraft({ ...draft, enabled: event.target.checked })
+                }
+              />
+              启用通道
+            </label>
+            <details className="advanced-config wide-field">
+              <summary>
+                <Settings size={16} />
+                高级配置
+              </summary>
+              <div className="advanced-grid">
+                <label>
+                  Verification Token
+                  <input
+                    type="password"
+                    value={draft.verificationToken}
+                    onChange={(e) =>
+                      setDraft({ ...draft, verificationToken: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Encrypt Key
+                  <input
+                    type="password"
+                    value={draft.encryptKey}
+                    onChange={(e) =>
+                      setDraft({ ...draft, encryptKey: e.target.value })
+                    }
+                  />
+                </label>
+                <label className="wide-field">
+                  通道适配器配置（JSON）
+                  <textarea
+                    rows={5}
+                    spellCheck={false}
+                    value={draft.configJson}
+                    onChange={(event) =>
+                      setDraft({ ...draft, configJson: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            </details>
+            <button
+              className="primary"
+              disabled={
+                !draft.name ||
+                !draft.botId ||
+                !draft.appId ||
+                (!draft.id && !draft.appSecret) ||
+                save.isPending
+              }
+              onClick={() => save.mutate()}
+            >
+              <Radio size={16} />
+              {draft.id ? "保存修改" : "保存通道"}
+            </button>
+          </div>
+          {save.error && (
+            <div className="error form-error">{String(save.error)}</div>
           )}
-        </div>
-        <div className="channel-form">
-          <label>
-            名称
-            <input
-              value={draft.name}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            />
-          </label>
-          <label>
-            机器人
-            <select
-              value={draft.botId}
-              onChange={(e) => setDraft({ ...draft, botId: e.target.value })}
-            >
-              <option value="">请选择</option>
-              {(bots.data ?? []).map((bot) => (
-                <option key={bot.id} value={bot.id}>
-                  {bot.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            App ID
-            <input
-              value={draft.appId}
-              disabled={Boolean(draft.id)}
-              onChange={(e) => setDraft({ ...draft, appId: e.target.value })}
-            />
-          </label>
-          <label>
-            App Secret
-            <input
-              type="password"
-              placeholder={draft.id ? "留空则保持原凭据" : ""}
-              value={draft.appSecret}
-              onChange={(e) =>
-                setDraft({ ...draft, appSecret: e.target.value })
-              }
-            />
-          </label>
-          <label>
-            接收方式
-            <select
-              value={draft.transport}
-              onChange={(e) =>
-                setDraft({ ...draft, transport: e.target.value })
-              }
-            >
-              <option value="long-connection">长连接</option>
-              <option value="webhook">Webhook</option>
-            </select>
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={draft.requireMention}
-              onChange={(e) =>
-                setDraft({ ...draft, requireMention: e.target.checked })
-              }
-            />
-            群聊仅在 @ 机器人时响应
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(event) =>
-                setDraft({ ...draft, enabled: event.target.checked })
-              }
-            />
-            启用通道
-          </label>
-          <details className="advanced-config wide-field">
-            <summary>
-              <Settings size={16} />
-              高级配置
-            </summary>
-            <div className="advanced-grid">
-              <label>
-                Verification Token
-                <input
-                  type="password"
-                  value={draft.verificationToken}
-                  onChange={(e) =>
-                    setDraft({ ...draft, verificationToken: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Encrypt Key
-                <input
-                  type="password"
-                  value={draft.encryptKey}
-                  onChange={(e) =>
-                    setDraft({ ...draft, encryptKey: e.target.value })
-                  }
-                />
-              </label>
-              <label className="wide-field">
-                通道适配器配置（JSON）
-                <textarea
-                  rows={5}
-                  spellCheck={false}
-                  value={draft.configJson}
-                  onChange={(event) =>
-                    setDraft({ ...draft, configJson: event.target.value })
-                  }
-                />
-              </label>
-            </div>
-          </details>
-          <button
-            className="primary"
-            disabled={
-              !draft.name ||
-              !draft.botId ||
-              !draft.appId ||
-              (!draft.id && !draft.appSecret) ||
-              save.isPending
-            }
-            onClick={() => save.mutate()}
-          >
-            <Radio size={16} />
-            {draft.id ? "保存修改" : "保存通道"}
-          </button>
-        </div>
-        {save.error && (
-          <div className="error form-error">{String(save.error)}</div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }
@@ -3274,19 +3488,23 @@ function BotsPanel() {
   };
   const [draft, setDraft] = useState(empty);
   const [editingBotId, setEditingBotId] = useState("");
+  const [editorOpen, setEditorOpen] = useState(false);
   const save = useMutation({
     mutationFn: async () => {
       const saved = await center(
         "runtime",
-        editingBotId ? `/v1/bots/${encodeURIComponent(editingBotId)}` : "/v1/bots",
+        editingBotId
+          ? `/v1/bots/${encodeURIComponent(editingBotId)}`
+          : "/v1/bots",
         {
-        method: editingBotId ? "PUT" : "POST",
-        body: JSON.stringify({
-          ...draft,
-          modelPolicyId: draft.modelPolicyId || undefined,
-          systemPrompt: draft.systemPrompt || undefined,
-        }),
-      });
+          method: editingBotId ? "PUT" : "POST",
+          body: JSON.stringify({
+            ...draft,
+            modelPolicyId: draft.modelPolicyId || undefined,
+            systemPrompt: draft.systemPrompt || undefined,
+          }),
+        },
+      );
       const routes = await center<any[]>(
         "mg",
         `/v1/routes?botId=${encodeURIComponent(draft.id)}`,
@@ -3307,6 +3525,7 @@ function BotsPanel() {
     onSuccess: () => {
       setDraft(empty);
       setEditingBotId("");
+      setEditorOpen(false);
       void client.invalidateQueries({ queryKey: ["bots"] });
     },
   });
@@ -3417,380 +3636,407 @@ function BotsPanel() {
   });
   return (
     <div className="stack">
-      <section className="section-band">
-        <div className="section-title">
-          <h3>机器人运行配置</h3>
-          <span>{bots.data?.length ?? 0} 个</span>
-        </div>
-        <div className="bot-list">
-          {(bots.data ?? []).map((bot) => (
-            <div className="bot-row" key={bot.id}>
-              <div>
-                <strong>{bot.name}</strong>
-                <span>
-                  {bot.id} · {bot.runtime} · {bot.enabled ? "运行中" : "已停用"}
-                </span>
-              </div>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setChatBot(bot);
-                  setChatMessages([]);
-                }}
-              >
-                <MessageSquare size={16} />
-                对话
-              </button>
-              <button
-                className="secondary"
-                disabled={!bot.historyBackfillBeta || backfill.isPending}
-                title={
-                  bot.historyBackfillBeta
-                    ? "从各会话持久游标继续补处理历史消息"
-                    : "请先启用历史补处理 Beta"
-                }
-                onClick={() => backfill.mutate(bot)}
-              >
-                <History size={16} />
-                补处理历史
-              </button>
-              <button
-                className="icon-button"
-                title="编辑"
-                onClick={() => {
-                  setDraft({ ...empty, ...bot });
-                  setEditingBotId(bot.id);
-                }}
-              >
-                <Settings size={16} />
-              </button>
-              <button
-                className="icon-button danger-button"
-                title={
-                  bot.purpose === "system-assistant"
-                    ? "系统助手不能删除"
-                    : "删除机器人"
-                }
-                disabled={bot.purpose === "system-assistant"}
-                onClick={() => {
-                  if (window.confirm(`确认删除机器人“${bot.name}”？`))
-                    removeBot.mutate(bot);
-                }}
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-          {!bots.isLoading && !(bots.data ?? []).length && (
-            <div className="empty">暂无机器人</div>
-          )}
-        </div>
-        {backfillResult && (
-          <div className="operation-result">
-            {backfillResult.status === "queued"
-              ? "等待调度"
-              : backfillResult.status === "running"
-                ? "处理中"
-                : backfillResult.status === "succeeded"
-                  ? "处理完成"
-                  : backfillResult.status === "partial"
-                    ? "部分完成"
-                    : backfillResult.status === "cancelled"
-                      ? "已取消"
-                      : "处理失败"}
-            ：已处理 {backfillResult.completedConversations ?? 0}/
-            {backfillResult.discoveredConversations ?? 0} 个会话，发现{" "}
-            {backfillResult.fetched ?? 0} 条，新处理{" "}
-            {backfillResult.accepted ?? 0} 条，跳过重复{" "}
-            {backfillResult.duplicates ?? 0} 条
-            {backfillResult.attachmentFailures
-              ? `，附件缓存失败 ${backfillResult.attachmentFailures} 个`
-              : ""}
-            {backfillResult.errors?.length
-              ? `，${backfillResult.errors.length} 个会话失败`
-              : ""}
-            {["queued", "running"].includes(backfillResult.status) && (
-              <button
-                className="secondary compact-button"
-                disabled={cancelBackfill.isPending}
-                onClick={() => cancelBackfill.mutate()}
-              >
-                <Pause size={14} />
-                取消
-              </button>
-            )}
-          </div>
-        )}
-        {backfill.error && (
-          <div className="error form-error">{String(backfill.error)}</div>
-        )}
-      </section>
-      {chatBot && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={() => setChatBot(undefined)}
-        >
-          <section
-            className="chat-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${chatBot.name} 对话`}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
+      {!editorOpen && (
+        <>
+          <section className="section-band">
             <div className="section-title">
-              <div>
-                <h3>{chatBot.name}</h3>
-                <span>直接对话</span>
+              <h3>机器人运行配置</h3>
+              <div className="section-actions">
+                <span>{bots.data?.length ?? 0} 个</span>
+                <button
+                  className="primary compact-button"
+                  onClick={() => {
+                    setDraft(empty);
+                    setEditingBotId("");
+                    setEditorOpen(true);
+                  }}
+                >
+                  <Plus size={16} />
+                  新增机器人
+                </button>
               </div>
-              <button
-                className="icon-button"
-                title="关闭"
-                onClick={() => setChatBot(undefined)}
-              >
-                <X size={17} />
-              </button>
             </div>
-            <div className="chat-transcript">
-              {chatMessages.map((message, index) => (
-                <div className={`chat-message ${message.role}`} key={index}>
-                  <strong>
-                    {message.role === "user" ? "你" : chatBot.name}
-                  </strong>
-                  <p>{message.content}</p>
+            <div className="bot-list">
+              {(bots.data ?? []).map((bot) => (
+                <div className="bot-row" key={bot.id}>
+                  <div>
+                    <strong>{bot.name}</strong>
+                    <span>
+                      {bot.id} · {bot.runtime} ·{" "}
+                      {bot.enabled ? "运行中" : "已停用"}
+                    </span>
+                  </div>
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      setChatBot(bot);
+                      setChatMessages([]);
+                    }}
+                  >
+                    <MessageSquare size={16} />
+                    对话
+                  </button>
+                  <button
+                    className="secondary"
+                    disabled={!bot.historyBackfillBeta || backfill.isPending}
+                    title={
+                      bot.historyBackfillBeta
+                        ? "从各会话持久游标继续补处理历史消息"
+                        : "请先启用历史补处理 Beta"
+                    }
+                    onClick={() => backfill.mutate(bot)}
+                  >
+                    <History size={16} />
+                    补处理历史
+                  </button>
+                  <button
+                    className="icon-button"
+                    title="编辑"
+                    onClick={() => {
+                      setDraft({ ...empty, ...bot });
+                      setEditingBotId(bot.id);
+                      setEditorOpen(true);
+                    }}
+                  >
+                    <Settings size={16} />
+                  </button>
+                  <button
+                    className="icon-button danger-button"
+                    title={
+                      bot.purpose === "system-assistant"
+                        ? "系统助手不能删除"
+                        : "删除机器人"
+                    }
+                    disabled={bot.purpose === "system-assistant"}
+                    onClick={() => {
+                      if (window.confirm(`确认删除机器人“${bot.name}”？`))
+                        removeBot.mutate(bot);
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ))}
-              {!chatMessages.length && (
-                <div className="empty">开始一段新对话</div>
+              {!bots.isLoading && !(bots.data ?? []).length && (
+                <div className="empty">暂无机器人</div>
               )}
-              {chat.isPending && <div className="muted">正在运行</div>}
-              {chat.error && <div className="error">{String(chat.error)}</div>}
             </div>
-            <div className="chat-compose">
-              <textarea
-                rows={3}
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    chatInput.trim()
-                  ) {
-                    event.preventDefault();
-                    chat.mutate(chatInput.trim());
-                  }
-                }}
-              />
-              <button
-                className="primary"
-                disabled={!chatInput.trim() || chat.isPending}
-                onClick={() => chat.mutate(chatInput.trim())}
-              >
-                <Play size={16} />
-                发送
-              </button>
-            </div>
+            {backfillResult && (
+              <div className="operation-result">
+                {backfillResult.status === "queued"
+                  ? "等待调度"
+                  : backfillResult.status === "running"
+                    ? "处理中"
+                    : backfillResult.status === "succeeded"
+                      ? "处理完成"
+                      : backfillResult.status === "partial"
+                        ? "部分完成"
+                        : backfillResult.status === "cancelled"
+                          ? "已取消"
+                          : "处理失败"}
+                ：已处理 {backfillResult.completedConversations ?? 0}/
+                {backfillResult.discoveredConversations ?? 0} 个会话，发现{" "}
+                {backfillResult.fetched ?? 0} 条，新处理{" "}
+                {backfillResult.accepted ?? 0} 条，跳过重复{" "}
+                {backfillResult.duplicates ?? 0} 条
+                {backfillResult.attachmentFailures
+                  ? `，附件缓存失败 ${backfillResult.attachmentFailures} 个`
+                  : ""}
+                {backfillResult.errors?.length
+                  ? `，${backfillResult.errors.length} 个会话失败`
+                  : ""}
+                {["queued", "running"].includes(backfillResult.status) && (
+                  <button
+                    className="secondary compact-button"
+                    disabled={cancelBackfill.isPending}
+                    onClick={() => cancelBackfill.mutate()}
+                  >
+                    <Pause size={14} />
+                    取消
+                  </button>
+                )}
+              </div>
+            )}
+            {backfill.error && (
+              <div className="error form-error">{String(backfill.error)}</div>
+            )}
           </section>
-        </div>
+          {chatBot && (
+            <div
+              className="modal-backdrop"
+              onMouseDown={() => setChatBot(undefined)}
+            >
+              <section
+                className="chat-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${chatBot.name} 对话`}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="section-title">
+                  <div>
+                    <h3>{chatBot.name}</h3>
+                    <span>直接对话</span>
+                  </div>
+                  <button
+                    className="icon-button"
+                    title="关闭"
+                    onClick={() => setChatBot(undefined)}
+                  >
+                    <X size={17} />
+                  </button>
+                </div>
+                <div className="chat-transcript">
+                  {chatMessages.map((message, index) => (
+                    <div className={`chat-message ${message.role}`} key={index}>
+                      <strong>
+                        {message.role === "user" ? "你" : chatBot.name}
+                      </strong>
+                      <p>{message.content}</p>
+                    </div>
+                  ))}
+                  {!chatMessages.length && (
+                    <div className="empty">开始一段新对话</div>
+                  )}
+                  {chat.isPending && <div className="muted">正在运行</div>}
+                  {chat.error && (
+                    <div className="error">{String(chat.error)}</div>
+                  )}
+                </div>
+                <div className="chat-compose">
+                  <textarea
+                    rows={3}
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        !event.shiftKey &&
+                        chatInput.trim()
+                      ) {
+                        event.preventDefault();
+                        chat.mutate(chatInput.trim());
+                      }
+                    }}
+                  />
+                  <button
+                    className="primary"
+                    disabled={!chatInput.trim() || chat.isPending}
+                    onClick={() => chat.mutate(chatInput.trim())}
+                  >
+                    <Play size={16} />
+                    发送
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+        </>
       )}
-      <section className="section-band">
-        <div className="section-title">
-          <h3>{editingBotId ? "编辑机器人" : "新增机器人"}</h3>
-          {editingBotId && (
+      {editorOpen && (
+        <section className="section-band">
+          <div className="section-title">
+            <h3>{editingBotId ? "编辑机器人" : "新增机器人"}</h3>
             <button
               className="secondary compact-button"
               onClick={() => {
                 setDraft(empty);
                 setEditingBotId("");
+                setEditorOpen(false);
               }}
             >
-              取消编辑
+              返回列表
             </button>
+          </div>
+          <div className="bot-form">
+            <label>
+              Bot ID
+              <input
+                value={draft.id}
+                disabled={Boolean(editingBotId)}
+                onChange={(e) => setDraft({ ...draft, id: e.target.value })}
+              />
+            </label>
+            <label>
+              名称
+              <input
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              />
+            </label>
+            <label>
+              Runtime
+              <select
+                value={draft.runtime}
+                onChange={(e) =>
+                  setDraft({ ...draft, runtime: e.target.value })
+                }
+              >
+                <option value="model-tool-loop">Model Tool Loop</option>
+                <option value="openai-agents">OpenAI Agents SDK</option>
+                <option value="claude-code">Claude Agent SDK</option>
+              </select>
+            </label>
+            <label>
+              模型策略
+              <select
+                value={draft.modelPolicyId}
+                onChange={(e) =>
+                  setDraft({ ...draft, modelPolicyId: e.target.value })
+                }
+              >
+                <option value="">未指定</option>
+                {(policies.data ?? []).map((policy) => (
+                  <option key={policy.id} value={policy.id}>
+                    {policy.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wide-field">
+              系统提示词
+              <textarea
+                rows={4}
+                value={draft.systemPrompt}
+                onChange={(e) =>
+                  setDraft({ ...draft, systemPrompt: e.target.value })
+                }
+              />
+            </label>
+            <details className="advanced-config wide-field">
+              <summary>
+                <Settings size={16} />
+                高级配置
+              </summary>
+              <div className="advanced-grid">
+                <label className="wide-field">
+                  描述
+                  <textarea
+                    rows={3}
+                    value={draft.description}
+                    onChange={(event) =>
+                      setDraft({ ...draft, description: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  用途
+                  <select
+                    value={draft.purpose}
+                    onChange={(event) =>
+                      setDraft({ ...draft, purpose: event.target.value })
+                    }
+                  >
+                    <option value="general">普通机器人</option>
+                    <option value="system-assistant">系统助手</option>
+                  </select>
+                </label>
+                <label>
+                  副作用模式
+                  <select
+                    value={draft.effectMode}
+                    onChange={(event) =>
+                      setDraft({ ...draft, effectMode: event.target.value })
+                    }
+                  >
+                    <option value="standard">标准</option>
+                    <option value="read-only">只读</option>
+                  </select>
+                </label>
+                <label>
+                  能力策略
+                  <select
+                    value={draft.capabilityPolicy}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        capabilityPolicy: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="resolved">加载已授权能力</option>
+                    <option value="none">禁用全部能力</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+            <label>
+              最大并发
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={draft.maxConcurrentExecutions}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    maxConcurrentExecutions: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <label>
+              最大回溯消息
+              <input
+                type="number"
+                min={0}
+                max={1000}
+                value={draft.maxBackfillMessages}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    maxBackfillMessages: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={draft.enabled}
+                onChange={(e) =>
+                  setDraft({ ...draft, enabled: e.target.checked })
+                }
+              />
+              启用
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={draft.autonomousReplyBeta}
+                onChange={(e) =>
+                  setDraft({ ...draft, autonomousReplyBeta: e.target.checked })
+                }
+              />
+              上下文自主回复 Beta
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={draft.historyBackfillBeta}
+                onChange={(e) =>
+                  setDraft({ ...draft, historyBackfillBeta: e.target.checked })
+                }
+              />
+              历史补处理 Beta
+            </label>
+            <button
+              className="primary"
+              disabled={!draft.id || !draft.name || save.isPending}
+              onClick={() => save.mutate()}
+            >
+              <Bot size={16} />
+              {editingBotId ? "保存修改" : "保存机器人"}
+            </button>
+          </div>
+          {save.error && (
+            <div className="error form-error">{String(save.error)}</div>
           )}
-        </div>
-        <div className="bot-form">
-          <label>
-            Bot ID
-            <input
-              value={draft.id}
-              disabled={Boolean(editingBotId)}
-              onChange={(e) => setDraft({ ...draft, id: e.target.value })}
-            />
-          </label>
-          <label>
-            名称
-            <input
-              value={draft.name}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            />
-          </label>
-          <label>
-            Runtime
-            <select
-              value={draft.runtime}
-              onChange={(e) => setDraft({ ...draft, runtime: e.target.value })}
-            >
-              <option value="model-tool-loop">Model Tool Loop</option>
-              <option value="openai-agents">OpenAI Agents SDK</option>
-              <option value="claude-code">Claude Agent SDK</option>
-            </select>
-          </label>
-          <label>
-            模型策略
-            <select
-              value={draft.modelPolicyId}
-              onChange={(e) =>
-                setDraft({ ...draft, modelPolicyId: e.target.value })
-              }
-            >
-              <option value="">未指定</option>
-              {(policies.data ?? []).map((policy) => (
-                <option key={policy.id} value={policy.id}>
-                  {policy.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="wide-field">
-            系统提示词
-            <textarea
-              rows={4}
-              value={draft.systemPrompt}
-              onChange={(e) =>
-                setDraft({ ...draft, systemPrompt: e.target.value })
-              }
-            />
-          </label>
-          <details className="advanced-config wide-field">
-            <summary>
-              <Settings size={16} />
-              高级配置
-            </summary>
-            <div className="advanced-grid">
-              <label className="wide-field">
-                描述
-                <textarea
-                  rows={3}
-                  value={draft.description}
-                  onChange={(event) =>
-                    setDraft({ ...draft, description: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                用途
-                <select
-                  value={draft.purpose}
-                  onChange={(event) =>
-                    setDraft({ ...draft, purpose: event.target.value })
-                  }
-                >
-                  <option value="general">普通机器人</option>
-                  <option value="system-assistant">系统助手</option>
-                </select>
-              </label>
-              <label>
-                副作用模式
-                <select
-                  value={draft.effectMode}
-                  onChange={(event) =>
-                    setDraft({ ...draft, effectMode: event.target.value })
-                  }
-                >
-                  <option value="standard">标准</option>
-                  <option value="read-only">只读</option>
-                </select>
-              </label>
-              <label>
-                能力策略
-                <select
-                  value={draft.capabilityPolicy}
-                  onChange={(event) =>
-                    setDraft({ ...draft, capabilityPolicy: event.target.value })
-                  }
-                >
-                  <option value="resolved">加载已授权能力</option>
-                  <option value="none">禁用全部能力</option>
-                </select>
-              </label>
-            </div>
-          </details>
-          <label>
-            最大并发
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={draft.maxConcurrentExecutions}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  maxConcurrentExecutions: Number(e.target.value),
-                })
-              }
-            />
-          </label>
-          <label>
-            最大回溯消息
-            <input
-              type="number"
-              min={0}
-              max={1000}
-              value={draft.maxBackfillMessages}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  maxBackfillMessages: Number(e.target.value),
-                })
-              }
-            />
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(e) =>
-                setDraft({ ...draft, enabled: e.target.checked })
-              }
-            />
-            启用
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={draft.autonomousReplyBeta}
-              onChange={(e) =>
-                setDraft({ ...draft, autonomousReplyBeta: e.target.checked })
-              }
-            />
-            上下文自主回复 Beta
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={draft.historyBackfillBeta}
-              onChange={(e) =>
-                setDraft({ ...draft, historyBackfillBeta: e.target.checked })
-              }
-            />
-            历史补处理 Beta
-          </label>
-          <button
-            className="primary"
-            disabled={!draft.id || !draft.name || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            <Bot size={16} />
-            {editingBotId ? "保存修改" : "保存机器人"}
-          </button>
-        </div>
-        {save.error && (
-          <div className="error form-error">{String(save.error)}</div>
-        )}
-        {removeBot.error && (
-          <div className="error form-error">{String(removeBot.error)}</div>
-        )}
-      </section>
+          {removeBot.error && (
+            <div className="error form-error">{String(removeBot.error)}</div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -3926,6 +4172,10 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
     credentialRefs: "",
     allowedTriggers: "",
   });
+  const [capabilityView, setCapabilityView] = useState<
+    "list" | "import" | "create"
+  >("list");
+  const [bindingEditorOpen, setBindingEditorOpen] = useState(false);
   const [commandDraft, setCommandDraft] = useState({
     name: "",
     command: "",
@@ -4051,22 +4301,23 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
         "cr",
         binding.id ? `/v1/bindings/${binding.id}` : "/v1/bindings",
         {
-        method: binding.id ? "PUT" : "POST",
-        body: JSON.stringify({
-          capabilityId: binding.capabilityId,
-          botId: binding.botId,
-          enabled: binding.enabled,
-          config: parseObjectJson(binding.configJson, "能力绑定配置"),
-          credentialRefs: binding.credentialRefs
-            .split(/[,，\s]+/)
-            .filter(Boolean),
-          allowedTriggers: binding.allowedTriggers
-            ? binding.allowedTriggers.split(/[,，\s]+/).filter(Boolean)
-            : kind === "command"
-              ? ["command", "manual", "scheduled"]
-              : ["agent", "manual", "scheduled", "workflow"],
-        }),
-      });
+          method: binding.id ? "PUT" : "POST",
+          body: JSON.stringify({
+            capabilityId: binding.capabilityId,
+            botId: binding.botId,
+            enabled: binding.enabled,
+            config: parseObjectJson(binding.configJson, "能力绑定配置"),
+            credentialRefs: binding.credentialRefs
+              .split(/[,，\s]+/)
+              .filter(Boolean),
+            allowedTriggers: binding.allowedTriggers
+              ? binding.allowedTriggers.split(/[,，\s]+/).filter(Boolean)
+              : kind === "command"
+                ? ["command", "manual", "scheduled"]
+                : ["agent", "manual", "scheduled", "workflow"],
+          }),
+        },
+      );
     },
     onSuccess: () => {
       setBinding({
@@ -4078,6 +4329,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
         credentialRefs: "",
         allowedTriggers: "",
       });
+      setBindingEditorOpen(false);
       refresh();
     },
   });
@@ -4173,8 +4425,34 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
     (item) => item.kind === "skill" && item.raw?.review,
   );
   return (
-    <div className="stack">
-      <section className="section-band">
+    <div className={`stack capability-workspace view-${capabilityView}`}>
+      <div className="subview-tabs" role="tablist" aria-label="能力管理视图">
+        <button
+          className={capabilityView === "list" ? "active" : ""}
+          role="tab"
+          aria-selected={capabilityView === "list"}
+          onClick={() => setCapabilityView("list")}
+        >
+          能力清单
+        </button>
+        <button
+          className={capabilityView === "import" ? "active" : ""}
+          role="tab"
+          aria-selected={capabilityView === "import"}
+          onClick={() => setCapabilityView("import")}
+        >
+          导入与更新
+        </button>
+        <button
+          className={capabilityView === "create" ? "active" : ""}
+          role="tab"
+          aria-selected={capabilityView === "create"}
+          onClick={() => setCapabilityView("create")}
+        >
+          创建能力
+        </button>
+      </div>
+      <section className="section-band capability-import">
         <div className="section-title">
           <h3>导入 Skill</h3>
           <span>ZIP 中必须包含根 SKILL.md</span>
@@ -4244,7 +4522,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
           <div className="error form-error">{String(importGitSkill.error)}</div>
         )}
       </section>
-      <section className="section-band">
+      <section className="section-band capability-import">
         <div className="section-title">
           <div>
             <h3>导入自定义 App</h3>
@@ -4279,7 +4557,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
       {(conflicts.data ?? []).some(
         (conflict) => conflict.status === "open",
       ) && (
-        <section className="section-band">
+        <section className="section-band capability-conflicts">
           <div className="section-title">
             <h3>导入冲突</h3>
             <span>需要人工决定</span>
@@ -4345,7 +4623,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
         </section>
       )}
       {!!reviewedSkills.length && (
-        <section className="section-band">
+        <section className="section-band capability-review">
           <div className="section-title">
             <h3>Skill 审查</h3>
             <span>导入与启用相互独立</span>
@@ -4391,7 +4669,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
           </div>
         </section>
       )}
-      <section className="section-band">
+      <section className="section-band capability-commands">
         <div className="section-title">
           <h3>命令</h3>
           <span>确定性匹配，不经过模型</span>
@@ -4485,7 +4763,7 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
         )}
         <DataTable items={items.filter((item) => item.kind === "command")} />
       </section>
-      <section className="section-band">
+      <section className="section-band capability-builder">
         <div className="section-title">
           <h3>Capability Builder</h3>
           <span>草稿 / 预检 / 确认 / 发布</span>
@@ -4582,88 +4860,19 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
           </div>
         )}
       </section>
-      <section className="section-band">
+      <section className="section-band capability-inventory">
         <div className="section-title">
-          <h3>能力清单</h3>
-          <span>
-            {items.length} 个能力 / {packages.data?.filter((item) => item.state !== "removed").length ?? 0} 个包
-          </span>
-        </div>
-        <div className="approval-list">
-          {(packages.data ?? [])
-            .filter((item) => item.state !== "removed")
-            .map((item) => (
-              <div className="approval-row" key={item.id}>
-                <div>
-                  <strong>{item.name}</strong>
-                  <span>{item.version} · {item.state}</span>
-                </div>
-                <button
-                  className="icon-button danger"
-                  title="卸载能力包"
-                  disabled={removePackage.isPending}
-                  onClick={() => {
-                    if (window.confirm(`确认卸载能力包“${item.name}”？相关能力将停止解析。`))
-                      removePackage.mutate(item.id);
-                  }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))}
-        </div>
-        <DataTable items={items} />
-        <div className="binding-form">
-          <select
-            value={binding.capabilityId}
-            onChange={(event) =>
-              setBinding({ ...binding, capabilityId: event.target.value })
-            }
-          >
-            <option value="">选择能力</option>
-            {items
-              .filter((item) => item.enabled)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-          </select>
-          <select
-            value={binding.botId}
-            onChange={(event) =>
-              setBinding({ ...binding, botId: event.target.value })
-            }
-          >
-            <option value="">选择机器人</option>
-            {(bots.data ?? []).map((bot) => (
-              <option key={bot.id} value={bot.id}>
-                {bot.name}
-              </option>
-            ))}
-          </select>
-          <button
-            className="primary"
-            disabled={!binding.capabilityId || !binding.botId || bind.isPending}
-            onClick={() => bind.mutate()}
-          >
-            <Route size={16} />
-            {binding.id ? "保存绑定" : "授权给机器人"}
-          </button>
-          <label className="checkbox-line">
-            <input
-              type="checkbox"
-              checked={binding.enabled}
-              onChange={(event) =>
-                setBinding({ ...binding, enabled: event.target.checked })
-              }
-            />
-            启用
-          </label>
-          {binding.id && (
+          <h3>
+            {bindingEditorOpen
+              ? binding.id
+                ? "编辑能力授权"
+                : "新增能力授权"
+              : "能力清单"}
+          </h3>
+          {bindingEditorOpen ? (
             <button
-              className="secondary"
-              onClick={() =>
+              className="secondary compact-button"
+              onClick={() => {
                 setBinding({
                   id: "",
                   capabilityId: "",
@@ -4672,94 +4881,220 @@ function CapabilitiesPanel({ items }: { items: any[] }) {
                   configJson: "{}",
                   credentialRefs: "",
                   allowedTriggers: "",
-                })
-              }
+                });
+                setBindingEditorOpen(false);
+              }}
             >
-              取消编辑
+              返回列表
             </button>
-          )}
-          <details className="advanced-config wide-field">
-            <summary>
-              <Settings size={16} />
-              高级配置
-            </summary>
-            <div className="advanced-grid">
-              <label>
-                允许的触发方式
-                <input
-                  placeholder="agent, manual, scheduled"
-                  value={binding.allowedTriggers}
-                  onChange={(event) =>
-                    setBinding({ ...binding, allowedTriggers: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                凭据引用
-                <input
-                  placeholder="多个引用用逗号分隔"
-                  value={binding.credentialRefs}
-                  onChange={(event) =>
-                    setBinding({ ...binding, credentialRefs: event.target.value })
-                  }
-                />
-              </label>
-              <label className="wide-field">
-                绑定配置（JSON）
-                <textarea
-                  rows={4}
-                  spellCheck={false}
-                  value={binding.configJson}
-                  onChange={(event) =>
-                    setBinding({ ...binding, configJson: event.target.value })
-                  }
-                />
-              </label>
-            </div>
-          </details>
-        </div>
-        <div className="approval-list">
-          {(bindings.data ?? []).map((item) => (
-            <div className="approval-row" key={item.id}>
-              <div>
-                <strong>
-                  {items.find((capability) => capability.id === item.capabilityId)?.name ?? item.capabilityId}
-                </strong>
-                <span>
-                  {(bots.data ?? []).find((bot) => bot.id === item.botId)?.name ?? item.botId}
-                  {item.enabled ? " · 已启用" : " · 已停用"}
-                </span>
-              </div>
+          ) : (
+            <div className="section-actions">
+              <span>
+                {items.length} 个能力 /{" "}
+                {packages.data?.filter((item) => item.state !== "removed")
+                  .length ?? 0}{" "}
+                个包
+              </span>
               <button
-                className="icon-button"
-                title="编辑绑定"
-                onClick={() =>
-                  setBinding({
-                    id: item.id,
-                    capabilityId: item.capabilityId,
-                    botId: item.botId,
-                    enabled: item.enabled,
-                    configJson: JSON.stringify(item.config ?? {}, null, 2),
-                    credentialRefs: (item.credentialRefs ?? []).join(", "),
-                    allowedTriggers: (item.allowedTriggers ?? []).join(", "),
-                  })
-                }
-              >
-                <Wrench size={16} />
-              </button>
-              <button
-                className="icon-button danger"
-                title="删除绑定"
+                className="primary compact-button"
                 onClick={() => {
-                  if (window.confirm("确认删除这条能力绑定？"))
-                    removeBinding.mutate(item.id);
+                  setBinding({
+                    id: "",
+                    capabilityId: "",
+                    botId: "",
+                    enabled: true,
+                    configJson: "{}",
+                    credentialRefs: "",
+                    allowedTriggers: "",
+                  });
+                  setBindingEditorOpen(true);
                 }}
               >
-                <Trash2 size={16} />
+                <Plus size={16} />
+                新增授权
               </button>
             </div>
-          ))}
+          )}
         </div>
+        {!bindingEditorOpen && (
+          <>
+            <div className="approval-list">
+              {(packages.data ?? [])
+                .filter((item) => item.state !== "removed")
+                .map((item) => (
+                  <div className="approval-row" key={item.id}>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span>
+                        {item.version} · {item.state}
+                      </span>
+                    </div>
+                    <button
+                      className="icon-button danger"
+                      title="卸载能力包"
+                      disabled={removePackage.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `确认卸载能力包“${item.name}”？相关能力将停止解析。`,
+                          )
+                        )
+                          removePackage.mutate(item.id);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+            </div>
+            <DataTable items={items} />
+          </>
+        )}
+        {bindingEditorOpen && (
+          <div className="binding-form">
+            <select
+              value={binding.capabilityId}
+              onChange={(event) =>
+                setBinding({ ...binding, capabilityId: event.target.value })
+              }
+            >
+              <option value="">选择能力</option>
+              {items
+                .filter((item) => item.enabled)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </select>
+            <select
+              value={binding.botId}
+              onChange={(event) =>
+                setBinding({ ...binding, botId: event.target.value })
+              }
+            >
+              <option value="">选择机器人</option>
+              {(bots.data ?? []).map((bot) => (
+                <option key={bot.id} value={bot.id}>
+                  {bot.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="primary"
+              disabled={
+                !binding.capabilityId || !binding.botId || bind.isPending
+              }
+              onClick={() => bind.mutate()}
+            >
+              <Route size={16} />
+              {binding.id ? "保存绑定" : "授权给机器人"}
+            </button>
+            <label className="checkbox-line">
+              <input
+                type="checkbox"
+                checked={binding.enabled}
+                onChange={(event) =>
+                  setBinding({ ...binding, enabled: event.target.checked })
+                }
+              />
+              启用
+            </label>
+            <details className="advanced-config wide-field">
+              <summary>
+                <Settings size={16} />
+                高级配置
+              </summary>
+              <div className="advanced-grid">
+                <label>
+                  允许的触发方式
+                  <input
+                    placeholder="agent, manual, scheduled"
+                    value={binding.allowedTriggers}
+                    onChange={(event) =>
+                      setBinding({
+                        ...binding,
+                        allowedTriggers: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  凭据引用
+                  <input
+                    placeholder="多个引用用逗号分隔"
+                    value={binding.credentialRefs}
+                    onChange={(event) =>
+                      setBinding({
+                        ...binding,
+                        credentialRefs: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="wide-field">
+                  绑定配置（JSON）
+                  <textarea
+                    rows={4}
+                    spellCheck={false}
+                    value={binding.configJson}
+                    onChange={(event) =>
+                      setBinding({ ...binding, configJson: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            </details>
+          </div>
+        )}
+        {!bindingEditorOpen && (
+          <div className="approval-list">
+            {(bindings.data ?? []).map((item) => (
+              <div className="approval-row" key={item.id}>
+                <div>
+                  <strong>
+                    {items.find(
+                      (capability) => capability.id === item.capabilityId,
+                    )?.name ?? item.capabilityId}
+                  </strong>
+                  <span>
+                    {(bots.data ?? []).find((bot) => bot.id === item.botId)
+                      ?.name ?? item.botId}
+                    {item.enabled ? " · 已启用" : " · 已停用"}
+                  </span>
+                </div>
+                <button
+                  className="icon-button"
+                  title="编辑绑定"
+                  onClick={() => {
+                    setBinding({
+                      id: item.id,
+                      capabilityId: item.capabilityId,
+                      botId: item.botId,
+                      enabled: item.enabled,
+                      configJson: JSON.stringify(item.config ?? {}, null, 2),
+                      credentialRefs: (item.credentialRefs ?? []).join(", "),
+                      allowedTriggers: (item.allowedTriggers ?? []).join(", "),
+                    });
+                    setBindingEditorOpen(true);
+                  }}
+                >
+                  <Wrench size={16} />
+                </button>
+                <button
+                  className="icon-button danger"
+                  title="删除绑定"
+                  onClick={() => {
+                    if (window.confirm("确认删除这条能力绑定？"))
+                      removeBinding.mutate(item.id);
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {(bind.error || removeBinding.error || removePackage.error) && (
           <div className="error form-error">
             {String(bind.error ?? removeBinding.error ?? removePackage.error)}
@@ -5356,9 +5691,10 @@ function Manual({ navigate }: { navigate: (page: string) => void }) {
   const [search, setSearch] = useState("");
   const normalized = search.trim().toLocaleLowerCase();
   const selected = manualSections.find((section) => section.id === sectionId)!;
-  const guides = (normalized
-    ? manualSections.flatMap((section) => section.guides)
-    : selected.guides
+  const guides = (
+    normalized
+      ? manualSections.flatMap((section) => section.guides)
+      : selected.guides
   ).filter((guide) =>
     [guide.title, guide.summary, ...guide.steps]
       .join(" ")
@@ -5393,7 +5729,9 @@ function Manual({ navigate }: { navigate: (page: string) => void }) {
               key={section.id}
               role="tab"
               aria-selected={!normalized && section.id === sectionId}
-              className={!normalized && section.id === sectionId ? "active" : ""}
+              className={
+                !normalized && section.id === sectionId ? "active" : ""
+              }
               onClick={() => {
                 setSearch("");
                 setSectionId(section.id);
@@ -5408,7 +5746,9 @@ function Manual({ navigate }: { navigate: (page: string) => void }) {
         <div>
           <BookOpen size={22} />
           <div>
-            <h3>{normalized ? `“${search.trim()}”的搜索结果` : selected.label}</h3>
+            <h3>
+              {normalized ? `“${search.trim()}”的搜索结果` : selected.label}
+            </h3>
             <p>
               {normalized
                 ? `找到 ${guides.length} 个相关操作。`
@@ -5605,16 +5945,21 @@ function AppShell({ me }: { me: any }) {
           </div>
         </div>
         <nav>
-          {nav.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              className={page === id ? "active" : ""}
-              onClick={() => choose(id)}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-              <ChevronRight size={15} />
-            </button>
+          {navGroups.map((group) => (
+            <section className="nav-group" key={group.label}>
+              <span className="nav-group-label">{group.label}</span>
+              {group.items.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  className={page === id ? "active" : ""}
+                  onClick={() => choose(id)}
+                >
+                  <Icon size={18} />
+                  <span>{label}</span>
+                  <ChevronRight size={15} />
+                </button>
+              ))}
+            </section>
           ))}
         </nav>
         <div className="aside-footer">

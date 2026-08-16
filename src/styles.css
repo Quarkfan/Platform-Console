@@ -170,8 +170,19 @@ aside {
 }
 nav {
   display: grid;
-  gap: 2px;
+  gap: 12px;
   overflow: auto;
+}
+.nav-group {
+  display: grid;
+  gap: 2px;
+}
+.nav-group-label {
+  padding: 0 10px 4px;
+  color: #708579;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 nav button,
 .aside-footer button {
@@ -651,6 +662,64 @@ progress {
 .advanced-grid .wide-field {
   grid-column: 1 / -1;
 }
+.subview-tabs {
+  width: fit-content;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #dce4df;
+  background: #edf2ef;
+}
+.subview-tabs button {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 3px;
+  color: #536159;
+  background: transparent;
+}
+.subview-tabs button.active {
+  color: #17201b;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(20 36 28 / 12%);
+}
+.capability-workspace.view-list > .capability-import,
+.capability-workspace.view-list > .capability-conflicts,
+.capability-workspace.view-list > .capability-review,
+.capability-workspace.view-list > .capability-commands,
+.capability-workspace.view-list > .capability-builder,
+.capability-workspace.view-import > .capability-commands,
+.capability-workspace.view-import > .capability-builder,
+.capability-workspace.view-import > .capability-inventory,
+.capability-workspace.view-create > .capability-import,
+.capability-workspace.view-create > .capability-conflicts,
+.capability-workspace.view-create > .capability-review,
+.capability-workspace.view-create > .capability-inventory {
+  display: none;
+}
+.models-workspace.listing .editor-heading,
+.models-workspace.listing .model-provider-form,
+.models-workspace.listing .model-form,
+.models-workspace.listing .policy-form,
+.context-workspace.listing .editor-heading,
+.context-workspace.listing .context-form {
+  display: none;
+}
+.models-workspace.editing .model-entity-list,
+.context-workspace.editing .model-entity-list,
+.models-workspace.editing > .section-band > .section-title,
+.context-workspace.editing > .section-band > .section-title {
+  display: none;
+}
+.models-workspace.edit-provider .deployment-section,
+.models-workspace.edit-provider .policy-section,
+.models-workspace.edit-deployment .provider-section,
+.models-workspace.edit-deployment .policy-section,
+.models-workspace.edit-policy .provider-section,
+.models-workspace.edit-policy .deployment-section,
+.context-workspace.edit-source .binding-section,
+.context-workspace.edit-binding .source-section {
+  display: none;
+}
 .subsection-title {
   margin-top: 16px;
   padding-top: 14px;
@@ -852,10 +921,9 @@ progress {
 }
 .browser-form {
   display: grid;
-  grid-template-columns: minmax(240px, 1.5fr) minmax(170px, 0.8fr) minmax(
-      170px,
-      0.8fr
-    ) auto;
+  grid-template-columns:
+    minmax(240px, 1.5fr) minmax(170px, 0.8fr) minmax(170px, 0.8fr)
+    auto;
   gap: 12px;
   align-items: end;
 }
@@ -1291,6 +1359,7 @@ progress {
     padding: 12px 8px;
   }
   .brand div,
+  .nav-group-label,
   nav button span,
   nav button svg:last-child,
   .aside-footer button {
