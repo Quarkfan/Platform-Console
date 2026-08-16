@@ -117,6 +117,31 @@ export function buildServer(o: {
     if (!origin) return true;
     return new URL(origin).host === request.headers.host;
   };
+  const resolveOAuthRedirectBase = (request: any) => {
+    const normalize = (value?: string) => {
+      if (!value) return undefined;
+      try {
+        const candidate = new URL(value);
+        if (
+          ["http:", "https:"].includes(candidate.protocol) &&
+          !candidate.username &&
+          !candidate.password
+        )
+          return `${candidate.protocol}//${candidate.host}`;
+      } catch {
+        return undefined;
+      }
+      return undefined;
+    };
+    const requestHost =
+      typeof request.headers.host === "string"
+        ? `${request.protocol}://${request.headers.host}`
+        : undefined;
+    return (
+      normalize(requestHost) ??
+      normalize(o.larkOAuthRedirectBaseUrl)
+    );
+  };
   const audit = (
     request: any,
     current: any,
@@ -321,7 +346,7 @@ export function buildServer(o: {
         scopes: z.array(z.string()).max(50).default([]),
       })
       .parse(request.body);
-    const base = o.larkOAuthRedirectBaseUrl;
+    const base = resolveOAuthRedirectBase(request);
     if (!base)
       return reply.code(503).send({
         ok: false,
