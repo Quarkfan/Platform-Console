@@ -149,13 +149,12 @@ export function buildServer(o: {
         : undefined,
     );
     if (hostFromForwarded) return hostFromForwarded;
-    const requestHost =
-      typeof request.headers.host === "string"
-        ? `${request.protocol}://${request.headers.host}`
-        : undefined;
     return (
-      normalize(requestHost) ??
-      normalize(o.larkOAuthRedirectBaseUrl)
+      hostFromForwarded ??
+      normalize(o.larkOAuthRedirectBaseUrl) ??
+      (typeof request.headers.host === "string"
+        ? `${request.protocol}://${request.headers.host}`
+        : undefined)
     );
   };
   const audit = (
